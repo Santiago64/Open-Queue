@@ -680,6 +680,8 @@
           <button class="chip ${OQ.lang === 'en' ? 'on' : ''}" data-act="lang" data-v="en">English</button></div></div>
         <div class="card"><div class="row"><h2 style="flex:1">${t('keepAwake')}</h2><div class="toggle ${keep ? 'on' : ''}" data-act="toggleKeep"></div></div><p class="note">${t('keepAwakeHelp')}</p>
           <button class="btn small" style="margin-top:10px" data-act="testSound">${t('testSound')}</button></div>
+        <div class="card"><h2>${t('fullscreen')}</h2><p class="note">${t('fullscreenHelp')}</p>
+          <button class="btn small" style="margin-top:10px" data-act="fullscreen">${t('fullscreenBtn')}</button></div>
         ${window.OQTheme ? window.OQTheme.html() : ''}
         <button class="btn block" data-act="unlink">${t('unlink')}</button>`;
     }
@@ -992,6 +994,12 @@
           if (pg && pg.selectedPerkIds.length === 9) slotCmd({ index: RU.slot, patch: { perks: { primaryStyleId: pg.primaryStyleId, subStyleId: pg.subStyleId, selectedPerkIds: pg.selectedPerkIds } } });
         } else cmd('selectRunePage', { id });
         closeSheets();
+        break;
+      }
+      case 'fullscreen': {
+        const el = document.documentElement;
+        const rq = el.requestFullscreen || el.webkitRequestFullscreen;
+        if (rq) { try { Promise.resolve(rq.call(el)).then(() => closeSheets()).catch(() => toast(t('fullscreenNo'))); } catch (_) { toast(t('fullscreenNo')); } } else toast(t('fullscreenNo'));
         break;
       }
       case 'lang': OQ.setLang(v); applyStatic(); loadStatic(); openList('settings'); break;
