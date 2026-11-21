@@ -43,3 +43,4 @@
 
 ##  v0.7.4
 - **Modo streamer / Streamer mode** (ventana de la PC): oculta la IP, el QR, el código y la ruta del diagnóstico para grabar o transmitir. Tocás uno para verlo 4 segundos. Se recuerda al reabrir.
+- **Pantalla completa** en el celular (ajustes): oculta la barra del navegador y con ella la IP de la dirección.
