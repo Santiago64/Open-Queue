@@ -1,122 +1,88 @@
 # Open Queue
 
-Controlá League of Legends desde tu celu: **aceptar la partida (manual o automático)**, buscar partida, y un mini champ select con picks, bans, hechizos, runas y el chat de la sala. Gratis y de código abierto.
+**English** · [Español](#español)
 
-Control League of Legends from your phone: **accept the match (manual or automatic)**, queue up, and a mini champ select with picks, bans, summoner spells, runes and lobby chat. Free and open source.
+Free, open-source companion for the League of Legends client. Control your own client from your phone or any browser on your home wifi: accept the match (manual or automatic), queue up, and use a mini champion select with picks, bans, summoner spells, runes, skins and lobby chat. Works on every server (LAS, LAN, NA, EUW...) because it talks to the client running on your PC.
 
-## Cómo usarlo (Windows)
+> Open Queue isn't endorsed by Riot Games and doesn't reflect the views or opinions of Riot Games or anyone officially involved in producing or managing Riot Games properties. Riot Games, and all associated properties are trademarks or registered trademarks of Riot Games, Inc.
 
-1. Instalá [Node.js LTS](https://nodejs.org) (una sola vez).
-2. Doble clic en **`Abrir Open Queue.vbs`**. La primera vez instala lo necesario en una ventana negra que se cierra sola (necesita internet, tarda un minuto). Después abre solo la ventana de Open Queue, **sin dejar ninguna consola abierta**.
-   - Si algo falla, usá **`Iniciar Open Queue.bat`**, que muestra la consola con los mensajes. También queda un registro en `open-queue.log`.
-3. Si Windows pregunta por el firewall, permití el acceso en **redes privadas**.
-4. Abrí el cliente de LoL.
-5. En el celu (mismo wifi que la PC): escaneá el QR de la ventana con la cámara, o abrí la dirección que aparece y escribí el código de 6 dígitos.
-6. Activá **Autoaceptar** y elegí el retraso (de instantáneo a lo más tarde posible, 8 s).
+## Features
+- Pair with a QR code or a 6-digit code. Accept/decline the match from your phone, or **auto-accept with a configurable delay (0-8 s)** that runs on the PC even if the phone disconnects.
+- Queue for current modes: Normal Draft/Blind, Ranked Solo/Duo and Flex, ARAM, ARAM Mayhem, Swiftplay, TFT. Primary/secondary role before searching.
+- Mini champ select: teams, timer, pick order, bans; pick/ban in two taps; pre-pick; summoner spells; skins; lobby chat.
+- Swap requests with teammates (pick order, role, champion) and ARAM bench/rerolls. ARAM Mayhem: choose between your 2 starting options.
+- Runes: your pages, the game's recommended pages, and an editor (create new pages or edit existing ones).
+- "Dodge" button (closes the client, asks for confirmation).
+- Customization: color wheel, fonts (including your own), custom background and sound, panel order. Stored only on your phone.
+- English and Spanish.
 
-El autoaceptar corre en la PC: funciona aunque el celu esté desconectado. Cerrar la ventana de Open Queue cierra la app.
+## How to use (Windows)
+1. Install [Node.js LTS](https://nodejs.org) (once).
+2. Double-click **`Abrir Open Queue.vbs`**. The first run installs what it needs (internet required, about a minute). Use **`Iniciar Open Queue.bat`** if you want to see the console.
+3. If Windows Firewall asks, allow **Private networks** only.
+4. Open the League client.
+5. On your phone (same wifi): scan the QR code of the window, or open the shown address and type the 6-digit code.
+6. Turn on **Auto-accept** and pick the delay.
 
-## Qué incluye
+## Privacy & security
+It only talks to the League client on `127.0.0.1` and to your phone on your local network. No accounts, no telemetry, no ads, no Riot credentials. See [SECURITY.md](SECURITY.md) and [LCU-ENDPOINTS.md](LCU-ENDPOINTS.md).
 
-- Vinculación por QR o código de 6 dígitos. El celu queda recordado hasta que generes un código nuevo.
-- Aceptar / rechazar la partida desde el celu y **autoaceptar con retraso configurable (0 a 8 s)**.
-- Buscar partida con los modos vigentes: Normal Draft, Normal a ciegas, Clasificatoria Solo/Dúo y Flex, ARAM, ARAM Mayhem, Swiftplay y TFT. Sin Clash, URF, tutoriales ni partidas contra bots.
-- Mini champ select: tu equipo, el rival, temporizador, orden de pick, baneos.
-- Pickear y banear con dos toques (elegir + confirmar), con buscador y filtro por clase. En un ban solo se apagan los ya baneados y nunca arranca con un campeón marcado.
-- **Pedidos de cambio** de orden de pick, de rol o de campeón: aparecen en el celu con aviso y botones Aceptar / Rechazar.
-- **ARAM**: banco de campeones disponibles (tocás uno para cambiarlo por el tuyo) y rerolls.
-- **Skins**: elegís entre las que tenés.
-- **Runas**: tus páginas guardadas, las **recomendadas por el juego** para tu campeón y línea, y un **editor** para armar las tuyas. Se guardan en una página llamada "Open Queue" (no pisa tus otras páginas).
-- Pick preparado antes de buscar partida: se marca solo cuando terminan los baneos (nunca durante ellos, para que no se banee solo).
-- Hechizos de invocador y chat de la sala.
-- Avisos con sonido y vibración: partida encontrada, tu turno y pedidos de cambio.
-- Español e inglés.
+## Support the project
+Open Queue is and will stay free. If it saved you a dodge and you want to say thanks:
+- [Ko-fi](https://ko-fi.com/KOFI_USER) (international, PayPal / cards)
+- [Cafecito](https://cafecito.app/CAFECITO_USER) (Argentina, Mercado Pago)
 
-## Aún no incluido
+Donations are optional and unlock nothing: every feature is free for everyone.
 
-- **Swiftplay**: en la sala podés armar los 2 slots (rol, campeón, hechizos, runas y skin) desde el celu. El comando para escribirlos al cliente se dedujo del diagnóstico; si no responde, mandá un diagnóstico nuevo.
-- Personalización (temas, fondos propios, sonidos propios, fuentes): pensada como función futura.
-- Filtro por **línea** (top/jungla/mid…): hoy filtra por clase de campeón.
-- Reordenar paneles.
-
-## Diagnóstico (para sumar modos nuevos)
-
-En la ventana de la PC hay una tarjeta **Diagnóstico**. Para ayudar a soportar un modo nuevo, por ejemplo Swiftplay:
-
-1. Tocá **Grabar diagnóstico**.
-2. En el juego, entrá a la sala del modo y hacé lo que querés automatizar (elegir roles, campeones, runas, skins) y buscá partida.
-3. Tocá **Detener y guardar** y compartí el archivo `diagnostico-….json` que aparece indicado en la tarjeta.
-
-El archivo no incluye contraseñas ni datos de tu cuenta.
-
-## Limitaciones conocidas
-
-- Con la pantalla del celu apagada, el navegador puede pausar la página y no sonar. Probá "Mantener activo en segundo plano" en Ajustes (experimental) o dejá la pantalla encendida.
-- Solo funciona dentro de la misma red local (sin servidor en internet).
-- Los íconos de campeones vienen del CDN oficial de Riot (Data Dragon): hace falta internet en el celu. Los de runas y skins los sirve tu propio cliente de LoL.
-- Las runas recomendadas, el editor, los cambios de pick, el banco de ARAM y las skins se programaron según la API del cliente y se probaron con un cliente simulado. Si alguna no responde igual en el juego real, usá el Diagnóstico y se ajusta.
-
-## Desarrollo
-
+## Development
 ```
 npm install
-npm start        # ventana de escritorio (Electron)
-npm run server   # solo el servidor, sin ventana
-npm test         # pruebas de punta a punta con un cliente de LoL simulado (node test/e2e.js y test/e2e2.js)
+npm start        # desktop window (Electron)
+npm run server   # server only
+npm test         # end-to-end tests against a simulated League client
 ```
+MIT License. Changes: see [CHANGELOG.md](CHANGELOG.md).
 
-El servidor escucha en el puerto 4747 (o el siguiente libre). Los ajustes se guardan en la carpeta de datos del usuario.
+---
 
-## Privacidad y seguridad
+## Español
 
-- Open Queue solo habla con el cliente de LoL en `127.0.0.1` y con tu celu en tu red local. No envía datos a ningún servidor.
-- Los comandos del celu requieren el código o el token de vinculación. Hay límite de intentos.
-- La pantalla de escritorio y el QR solo se pueden abrir desde la propia PC.
+Companion gratuito y de código abierto para el cliente de League of Legends. Controlá tu propio cliente desde el celu o cualquier navegador de tu wifi: **aceptar la partida (manual o automático)**, buscar partida y un mini champ select con picks, bans, hechizos, runas, skins y chat de la sala. Funciona en todos los servidores porque habla con el cliente que está en tu PC.
 
-## Aviso legal
+> Open Queue no está avalado por Riot Games ni refleja las opiniones de Riot Games ni de nadie involucrado oficialmente en producir o administrar sus propiedades. Riot Games y todas las propiedades asociadas son marcas registradas de Riot Games, Inc.
 
-Open Queue isn't endorsed by Riot Games and doesn't reflect the views or opinions of Riot Games or anyone officially involved in producing or managing Riot Games properties. Riot Games, and all associated properties are trademarks or registered trademarks of Riot Games, Inc.
+### Qué incluye
+- Vinculación por QR o código de 6 dígitos. Aceptar/rechazar desde el celu o **autoaceptar con retraso configurable (0 a 8 s)**, que corre en la PC aunque el celu se desconecte.
+- Buscar partida en los modos vigentes: Normal Draft/a ciegas, Solo/Dúo y Flex, ARAM, ARAM Mayhem, Swiftplay y TFT. Rol principal y secundario antes de buscar.
+- Mini champ select: equipos, temporizador, orden de pick, baneos; pick/ban en dos toques; pick preparado; hechizos; skins; chat.
+- Pedidos de cambio con compañeros (orden de pick, rol, campeón) y banco/rerolls de ARAM. ARAM Mayhem: elegís entre tus 2 opciones iniciales.
+- Runas: tus páginas, las recomendadas por el juego y un editor (crear páginas nuevas o editar las existentes).
+- Botón **Dodgear** (cierra el cliente, pide confirmación).
+- Personalización: rueda de color, tipografías (también la tuya), fondo y sonido propios, orden de paneles. Se guarda solo en tu celu.
+- Español e inglés.
 
-Antes de publicar o cobrar por funciones, registrá el producto en el [Riot Developer Portal](https://developer.riotgames.com) y leé sus políticas.
+### Cómo usarlo (Windows)
+1. Instalá [Node.js LTS](https://nodejs.org) (una sola vez).
+2. Doble clic en **`Abrir Open Queue.vbs`**. La primera vez instala lo necesario (necesita internet, tarda un minuto). Si algo falla, usá **`Iniciar Open Queue.bat`**, que muestra la consola.
+3. Si el firewall de Windows pregunta, permití solo **Redes privadas**.
+4. Abrí el cliente de LoL.
+5. En el celu (mismo wifi): escaneá el QR de la ventana o abrí la dirección que aparece y escribí el código de 6 dígitos.
+6. Activá **Autoaceptar** y elegí el retraso.
 
-## Licencia
+### Privacidad y seguridad
+Solo habla con el cliente de LoL en `127.0.0.1` y con tu celu en tu red local. Sin cuentas, telemetría, anuncios ni credenciales de Riot. Ver [SECURITY.md](SECURITY.md) y [LCU-ENDPOINTS.md](LCU-ENDPOINTS.md).
 
-MIT. Ver `LICENSE`.
+### Apoyar el proyecto
+Open Queue es y seguirá siendo gratis. Si te sirvió y querés agradecer:
+- [Ko-fi](https://ko-fi.com/KOFI_USER) (exterior, PayPal / tarjeta)
+- [Cafecito](https://cafecito.app/CAFECITO_USER) (Argentina, Mercado Pago)
 
-## Novedades v0.5
-- Rol principal y secundario antes de buscar (Normal, Solo/Dúo, Flex): se aplican a la sala al iniciar la búsqueda.
-- El selector de modo ya no se reinicia al tocar el autoaceptar o el pick preparado.
-- Pedir cambios a un compañero: orden de pick, rol y campeón (ARAM: solo campeón). Si el juego no ofrece el cambio, no aparece el botón.
-- Botón **Dodgear**: cierra el cliente de LoL (con confirmación; el juego puede penalizarte).
-- Runas recomendadas: se piden las 3 al juego y "usar" aplica sobre la página temporal del cliente.
-- Un solo build para todos los servidores: la app habla con el cliente local, así que detecta tu región sola.
+Las donaciones son opcionales y no desbloquean nada: todas las funciones son gratis para todos.
 
-## Novedades v0.5.1
-- ARAM / Mayhem: se muestran las 2 opciones iniciales para elegir con un toque.
-- Pedidos de cambio de campeón en ARAM (el cliente los llama "trades"): se reciben y se pueden pedir.
-- Pedir cambios: botones arriba (orden / rol / campeón) y después tocás al compañero. Se muestra el estado (esperando / rechazado).
-- Dodge en rojo.
-- Runas: se descartan las runas viejas que el cliente todavía lista y que el juego rechaza.
-- Ver SECURITY.md.
+### Limitaciones conocidas
+- Con la pantalla del celu apagada, el navegador puede pausar la página y no sonar: probá "Mantener activo en segundo plano" en Ajustes o dejá la pantalla encendida.
+- Solo funciona dentro de la misma red local.
+- Los íconos de campeones vienen de Data Dragon (CDN oficial de Riot): hace falta internet en el celu.
+- Si algo no responde igual en el juego real, usá la tarjeta **Diagnóstico** de la ventana de la PC y compartí el archivo (no incluye contraseñas ni datos de tu cuenta).
 
-## Novedades v0.6
-- Personalizar (ajustes): color, tipografía, fondo propio, sonido propio de partida encontrada y orden de los paneles. Se guarda solo en el celular y no trae arte de Riot.
-- Cambio de campeón en ARAM: si el cliente responde 404 en una ruta, se prueban las alternativas.
-- Diagnóstico: ahora incluye qué rutas de cambio existen y los detalles de las runas recomendadas.
-
-## Novedades v0.6.1
-- Cambio de campeón en ARAM: ya usa la ruta correcta (confirmada en tu diagnóstico).
-- Runas: el editor ya no se demora (antes esperaba al buscar recomendadas) y las recomendadas se leen aunque el cliente las devuelva con otro formato.
-- Personalización: se puede subir tu propia tipografía.
-- Chat de champ select: los demás jugadores se muestran como "Aliado N" (política de Riot).
-- Ver SECURITY.md y RIOT-REGISTRO.md.
-
-## Novedades v0.7
-- Runas: podés editar tus páginas armadas y elegir en cuál guardar. Se comprueba que el cliente realmente la guardó y, si no, avisa.
-- Personalización: rueda de color para elegir cualquier color.
-- Chat de champ select: los nombres se ven como en el cliente; solo en ranked se numeran "Aliado N" (el cliente los oculta ahí).
-- SECURITY.md ahora está en inglés y español.
-
-## Novedades v0.7.1
-- Runas: se puede crear una página nueva con nombre propio (si tenés lugar libre) o sobrescribir una existente.
-- ARAM / Mayhem: ya no aparece el botón de elegir campeón; quedan las 2 opciones iniciales y el banco.
+Licencia MIT. Cambios: ver [CHANGELOG.md](CHANGELOG.md).
