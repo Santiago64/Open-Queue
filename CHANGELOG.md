@@ -40,3 +40,6 @@
 
 ##  v0.7.2
 - El registro de la app (open-queue.log) ahora se guarda en la carpeta temporal de Windows, no en la carpeta del programa.
+
+##  v0.7.4
+- **Modo streamer / Streamer mode** (ventana de la PC): oculta la IP, el QR, el código y la ruta del diagnóstico para grabar o transmitir. Tocás uno para verlo 4 segundos. Se recuerda al reabrir.
