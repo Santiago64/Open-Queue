@@ -1,0 +1,61 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Open Queue</title>
+<link rel="stylesheet" href="/style.css">
+</head>
+<body class="desktop">
+<div class="page">
+  <header class="top">
+    <div class="logo">OPEN QUEUE<small>FOR LEAGUE OF LEGENDS</small></div>
+    <div class="chips">
+      <button class="chip" id="langEs">ES</button>
+      <button class="chip" id="langEn">EN</button>
+    </div>
+  </header>
+
+  <div class="statusbar" id="statusbar"></div>
+
+  <div class="desk">
+    <div class="card" id="pairCard">
+      <h2 data-i18n="pairNow"></h2>
+      <p class="note" data-i18n="scanQr" style="margin-bottom:10px"></p>
+      <img id="qr" class="qr" alt="QR">
+      <p class="note" style="text-align:center" data-i18n="orCode"></p>
+      <div class="url" id="url"></div>
+      <div class="bigcode" id="code">------</div>
+      <p class="note" style="text-align:center"><span data-i18n="phones"></span>: <b id="phones">0</b></p>
+      <button class="btn block small" id="regen" style="margin-top:10px" data-i18n="regen"></button>
+      <p class="note" style="text-align:center" data-i18n="regenHelp"></p>
+    </div>
+
+    <div>
+      <div class="card">
+        <div class="row"><h2 data-i18n="autoTitle"></h2><span class="spacer"></span><span class="dim" id="autoLbl" style="font-size:12px"></span><div class="toggle" id="autoToggle"></div></div>
+        <div style="margin-top:16px">
+          <div class="row"><span class="dim" style="font-size:12px" data-i18n="autoDelay"></span><span class="spacer"></span><b id="delayLbl"></b></div>
+          <input type="range" id="delay" min="0" max="8" step="0.5" value="0" style="margin-top:8px">
+          <div class="row dim" style="font-size:11px;margin-top:4px"><span data-i18n="autoNow"></span><span class="spacer"></span><span data-i18n="autoMax"></span></div>
+        </div>
+        <p class="note" data-i18n="autoNote"></p>
+      </div>
+      <div class="card">
+        <div class="row"><h2 data-i18n="diag"></h2><span class="spacer"></span><button class="btn small" id="diagBtn"></button></div>
+        <p class="note" data-i18n="diagHelp"></p>
+        <p class="note" id="diagInfo" style="word-break:break-all"></p>
+      </div>
+      <div class="card">
+        <h2 data-i18n="status"></h2>
+        <p class="note" style="font-size:13.5px" data-i18n="sameWifi"></p>
+        <p class="note" style="font-size:13.5px" data-i18n="firewall"></p>
+      </div>
+    </div>
+  </div>
+  <p class="disclaimer" id="disclaimer"></p>
+</div>
+<script src="/shared.js"></script>
+<script src="/desktop.js"></script>
+</body>
+</html>

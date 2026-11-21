@@ -1,0 +1,70 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#0a0a0c">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<title>Open Queue</title>
+<link rel="stylesheet" href="/style.css">
+</head>
+<body>
+<div class="page">
+  <header class="top">
+    <div class="logo">OPEN QUEUE<small>FOR LEAGUE OF LEGENDS</small></div>
+    <button class="iconbtn" data-act="openSettings" aria-label="Settings">&#9881;</button>
+  </header>
+
+  <section id="authView" class="hidden">
+    <div class="card">
+      <h2 data-i18n="connectTitle"></h2>
+      <p class="note" data-i18n="connectHelp"></p>
+      <div style="margin-top:14px">
+        <input id="codeIn" class="codeinput" type="text" inputmode="numeric" pattern="[0-9]*" maxlength="6" autocomplete="off">
+      </div>
+      <div class="err" id="authErr"></div>
+      <button class="btn primary block" id="codeBtn" data-i18n="connect" style="margin-top:6px"></button>
+    </div>
+  </section>
+
+  <section id="mainView" class="hidden">
+    <div id="statusbar" class="statusbar"></div>
+    <div id="autoCard"></div>
+    <div id="phaseArea"></div>
+    <div id="preCard"></div>
+    <div id="chatCard" class="card hidden">
+      <h2 data-i18n="chat"></h2>
+      <div id="chatMsgs" class="chatbox"></div>
+      <div class="chatrow">
+        <input id="chatIn" type="text" maxlength="300" autocomplete="off">
+        <button class="btn" id="chatSend" data-i18n="send"></button>
+      </div>
+    </div>
+  </section>
+
+  <p class="disclaimer" id="disclaimer"></p>
+</div>
+
+<div id="sheetChamp" class="sheet hidden">
+  <div class="head"><h2 id="scTitle"></h2><button class="iconbtn" data-act="closeSheet">&#10005;</button></div>
+  <div class="body">
+    <input id="scSearch" type="search" autocomplete="off">
+    <div class="chips" id="scChips" style="margin-top:10px"></div>
+    <p class="note dim" id="scNoData" style="font-size:12px"></p>
+    <div class="grid" id="scGrid"></div>
+  </div>
+  <div class="foot"><button class="btn primary block" id="scConfirm"></button></div>
+</div>
+
+<div id="sheetList" class="sheet hidden">
+  <div class="head"><h2 id="slTitle"></h2><button class="iconbtn" data-act="closeSheet">&#10005;</button></div>
+  <div class="body" id="slBody"></div>
+</div>
+
+<div id="toast" class="toast hidden"></div>
+
+<script src="/shared.js"></script>
+<script src="/theme.js"></script>
+<script src="/mobile.js"></script>
+</body>
+</html>
