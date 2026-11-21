@@ -7,6 +7,14 @@
   let dragging = false;
   let lastQr = '';
 
+  function setStream(on) {
+    try { localStorage.setItem('oq_stream', on ? '1' : '0'); } catch (_) {}
+    document.body.classList.toggle('stream', on);
+    $('streamBtn').classList.toggle('on', on);
+    $('streamNote').style.display = on ? '' : 'none';
+  }
+  function isStream() { try { return localStorage.getItem('oq_stream') === '1'; } catch (_) { return false; } }
+
   function applyStatic() {
     document.documentElement.lang = OQ.lang;
     document.querySelectorAll('[data-i18n]').forEach((n) => { n.textContent = t(n.getAttribute('data-i18n')); });
@@ -54,7 +62,17 @@
   $('langEs').addEventListener('click', () => { OQ.setLang('es'); applyStatic(); paint(); });
   $('langEn').addEventListener('click', () => { OQ.setLang('en'); applyStatic(); paint(); });
 
+  $('streamBtn').addEventListener('click', () => setStream(!isStream()));
+  document.querySelectorAll('.secret').forEach((n) => {
+    n.addEventListener('click', () => {
+      if (!document.body.classList.contains('stream')) return;
+      n.classList.add('peek');
+      setTimeout(() => n.classList.remove('peek'), 4000);
+    });
+  });
+
   applyStatic();
+  setStream(isStream());
   poll();
   setInterval(poll, 1000);
 })();

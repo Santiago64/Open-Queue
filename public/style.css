@@ -123,3 +123,8 @@ input[type=range] { width: 100%; accent-color: #fff; }
 .slot.swappable { border-color: var(--accent); cursor: pointer; }
 .slot.dimmed { opacity: .4; }
 .reqtag { color: var(--accent); text-transform: uppercase; letter-spacing: .08em; font-size: 10px; padding-right: 6px; }
+
+/* Modo streamer: oculta IP, QR, codigo y rutas. Click para mostrar un momento. */
+body.stream .secret { filter: blur(14px); cursor: pointer; transition: filter .15s; user-select: none; }
+body.stream .secret.peek { filter: none; }
+#streamBtn.on { background: #fff; color: #000; }
