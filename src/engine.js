@@ -2,6 +2,8 @@
 // Cerebro de Open Queue: sigue el estado del cliente de LoL y ejecuta las acciones.
 const EventEmitter = require('events');
 const { LCU } = require('./lcu');
+let APP_VERSION = '';
+try { APP_VERSION = require('../package.json').version; } catch (_) {}
 
 const MAX_AUTO_DELAY = 8; // segundos: tope conservador para que nunca se pase el ready check
 
@@ -24,6 +26,7 @@ const QUEUE_NAMES = {
 const QUEUE_ORDER = [400, 430, 420, 440, 450, 2400, 480, 1090, 1100, 1160, 1130];
 const FALLBACK_QUEUES = QUEUE_ORDER.slice(0, 6).map((id) => ({ id, name: QUEUE_NAMES[id] }));
 
+const EMOTE_SLOTS = ['EMOTES_WHEEL_UPPER_LEFT', 'EMOTES_WHEEL_UPPER', 'EMOTES_WHEEL_UPPER_RIGHT', 'EMOTES_WHEEL_LEFT', 'EMOTES_WHEEL_CENTER', 'EMOTES_WHEEL_RIGHT', 'EMOTES_WHEEL_LOWER_LEFT', 'EMOTES_WHEEL_LOWER', 'EMOTES_WHEEL_LOWER_RIGHT'];
 const SWAP_PATHS = { pickOrder: 'pick-order-swaps', position: 'position-swaps', champion: 'trades' };
 const NOISY_URIS = ['/lol-chat', '/riotclient', '/lol-patch', '/data-store', '/lol-settings', '/lol-store', '/lol-inventory',
   '/lol-champions', '/lol-loot', '/lol-clubs', '/lol-hovercard', '/lol-summoner', '/lol-regalia', '/lol-challenges',
@@ -83,6 +86,7 @@ class Engine extends EventEmitter {
       chat: [],
       chatReady: false,
       invites: [],
+      version: APP_VERSION,
     };
   }
 
@@ -209,6 +213,9 @@ class Engine extends EventEmitter {
       };
     }) : [];
     if (Array.isArray(d.members)) {
+      // Gente de tu grupo (party): en ranked sus nombres se muestran en el chat aunque el cliente oculte a los demás.
+      this._party = { sids: new Set(), puuids: new Set() };
+      d.members.forEach((m) => { if (m && !m.isBot) { if (m.summonerId) this._party.sids.add(m.summonerId); if (m.puuid) this._party.puuids.add(m.puuid); } });
       if (!this._lobbyNames) this._lobbyNames = new Map();
       d.members.forEach((m) => { const nm = m.gameName || m.summonerName || m.summonerInternalName; if (m && m.summonerId && nm) this._lobbyNames.set(m.summonerId, nm); });
     }
@@ -325,7 +332,7 @@ class Engine extends EventEmitter {
     if (p === 'Lobby' || p === 'Matchmaking') {
       this._fetchLobby();
     }
-    if (p === 'None') { this.s.lobbyQueueId = null; this.s.lobby = null; }
+    if (p === 'None') { this.s.lobbyQueueId = null; this.s.lobby = null; this._party = null; }
 
     const chatWanted = (x) => ['Lobby', 'Matchmaking', 'ReadyCheck', 'ChampSelect'].includes(x);
     if (chatWanted(p) && !chatWanted(prev)) this._startChat(); // chat de la sala
@@ -892,6 +899,89 @@ class Engine extends EventEmitter {
   }
 
   // Datos para el editor de runas y las runas recomendadas por el juego.
+  // ---------- emotes y ward (loadout de la cuenta) ----------
+  async _loadout() {
+    const r = await this.lcu.request('GET', '/lol-loadouts/v4/loadouts/scope/account');
+    const list = r.status === 200 && Array.isArray(r.data) ? r.data : [];
+    return list.find((x) => x && x.loadout && x.loadout.EMOTES_WHEEL_CENTER) || list[0] || null;
+  }
+
+  async cosmeticsData() {
+    const L = await this._loadout();
+    if (!L) return { ok: false, error: 'noLoadout' };
+    const slots = {};
+    for (const k of EMOTE_SLOTS) slots[k] = L.loadout[k] ? L.loadout[k].itemId : null;
+    const ward = L.loadout.WARD_SKIN_SLOT ? L.loadout.WARD_SKIN_SLOT.itemId : null;
+    const get = async (path) => { const r = await this.lcu.request('GET', path); return r.status === 200 ? r.data : null; };
+    const [emInv, wardInv1, emCat, wardCat] = await Promise.all([
+      get('/lol-inventory/v2/inventory/EMOTE'),
+      get('/lol-inventory/v2/inventory/WARD_SKIN'),
+      get('/lol-game-data/assets/v1/summoner-emotes.json'),
+      get('/lol-game-data/assets/v1/ward-skins.json'),
+    ]);
+    let wardInv = wardInv1;
+    if (!Array.isArray(wardInv) && this._mySummonerId) wardInv = await get(`/lol-collections/v1/inventories/${this._mySummonerId}/ward-skins`);
+    const path = (v) => (v && String(v).startsWith('/lol-game-data/assets/') ? '/lcu-asset' + v : '');
+    const catalog = (arr, iconKeys) => {
+      const m = new Map();
+      (Array.isArray(arr) ? arr : Object.values(arr || {})).forEach((x) => {
+        if (!x || x.id === undefined) return;
+        let icon = '';
+        for (const k of iconKeys) if (x[k]) { icon = path(x[k]); if (icon) break; }
+        m.set(Number(x.id), { name: x.name || '', icon });
+      });
+      return m;
+    };
+    const ec = catalog(emCat, ['inventoryIcon', 'iconPath', 'imagePath']);
+    const wc = catalog(wardCat, ['wardImagePath', 'inventoryIcon', 'iconPath']);
+    const idsOf = (inv) => (Array.isArray(inv) ? inv.map((x) => Number(x.itemId !== undefined ? x.itemId : x.id)).filter((x) => x > 0) : []);
+    const item = (id, cat) => ({ id, name: (cat.get(id) || {}).name || `#${id}`, icon: (cat.get(id) || {}).icon || '' });
+    const ownedEmotes = [...new Set(idsOf(emInv).concat(Object.values(slots).filter(Boolean)))].map((i) => item(i, ec));
+    const ownedWards = [...new Set(idsOf(wardInv).concat(ward ? [ward] : []))].map((i) => item(i, wc));
+    if (this._diag) this._diag.cosmeticsTrail = { loadoutKeys: Object.keys(L.loadout), emInv: Array.isArray(emInv) ? emInv.slice(0, 2) : emInv, wardInv: Array.isArray(wardInv) ? wardInv.slice(0, 2) : wardInv, emCat: Array.isArray(emCat) ? emCat.slice(0, 2) : (emCat ? 'obj' : null), wardCat: Array.isArray(wardCat) ? wardCat.slice(0, 2) : (wardCat ? 'obj' : null) };
+    return { ok: true, slots: Object.fromEntries(EMOTE_SLOTS.map((k) => [k, slots[k] ? item(slots[k], ec) : null])), ward: ward ? item(ward, wc) : null, ownedEmotes, ownedWards };
+  }
+
+  // Cambia un espacio del loadout (rueda de emotes o ward) y verifica que quedó.
+  async _setLoadoutSlot(slot, inventoryType, itemId) {
+    const L = await this._loadout();
+    if (!L) return { ok: false, error: 'noLoadout' };
+    const val = { contentId: '', data: {}, inventoryType, itemId: Number(itemId) };
+    const full = JSON.parse(JSON.stringify(L));
+    full.loadout[slot] = val;
+    const tries = [
+      ['PUT', `/lol-loadouts/v4/loadouts/${L.id}`, full],
+      ['PATCH', `/lol-loadouts/v4/loadouts/${L.id}`, { loadout: { [slot]: val } }],
+      ['PATCH', `/lol-loadouts/v4/loadouts/${L.id}`, full],
+    ];
+    const trail = [];
+    for (const [m, u, b] of tries) {
+      const r = await this.lcu.request(m, u, b);
+      trail.push([m, r.status]);
+      const chk = await this._loadout();
+      if (chk && chk.loadout[slot] && chk.loadout[slot].itemId === Number(itemId)) { if (this._diag) this._diag.cosmeticsSet = trail; return { ok: true }; }
+    }
+    if (this._diag) this._diag.cosmeticsSet = trail;
+    return { ok: false, error: 'notapplied' };
+  }
+
+  async setEmote(slot, itemId) {
+    if (!EMOTE_SLOTS.includes(slot) || !Number(itemId)) return { ok: false, error: 'bad' };
+    return this._setLoadoutSlot(slot, 'EMOTE', itemId);
+  }
+
+  async setWard(itemId) {
+    itemId = Number(itemId);
+    if (!itemId) return { ok: false, error: 'bad' };
+    let applied = false;
+    if (this.s.phase === 'ChampSelect') {
+      const r = await this.lcu.request('PATCH', '/lol-champ-select/v1/session/my-selection', { wardSkinId: itemId });
+      applied = r.status >= 200 && r.status < 300;
+    }
+    const l = await this._setLoadoutSlot('WARD_SKIN_SLOT', 'WARD_SKIN', itemId);
+    return applied || l.ok ? { ok: true } : l;
+  }
+
   async runeData(championId, position) {
     const valid = await this._loadValidPerks();
     this._lastValidSize = valid ? valid.size : 0;
@@ -1115,6 +1205,7 @@ class Engine extends EventEmitter {
     try { styleDump = Array.isArray(sty.data) ? sty.data.filter((x) => x.id === 8100).map((x) => x.slots.map((sl) => sl.perks)) : null; } catch (_) {}
     const out = {
       note: 'Diagnóstico de Open Queue. No incluye contraseñas ni datos de tu cuenta.',
+      version: APP_VERSION,
       generatedAt: new Date().toISOString(),
       platform: process.platform,
       phase: this.s.phase,
@@ -1134,6 +1225,8 @@ class Engine extends EventEmitter {
       useRunesFail: d.useRunesFail || null,
       chatConvs: d.chatConvs || null,
       chatSample: d.chatSample || null,
+      cosmeticsTrail: d.cosmeticsTrail || null,
+      cosmeticsSet: d.cosmeticsSet || null,
       chatParticipants: d.chatParticipants || null,
       helpSwap,
       dominationSlots: styleDump,
@@ -1228,10 +1321,11 @@ class Engine extends EventEmitter {
       const me = this._chatMe || {};
       const mine = (this._mySummonerId && m.fromSummonerId === this._mySummonerId) || (!!this._myPuuid && m.fromPuuid === this._myPuuid) || (!!me.id && m.fromId === me.id) || (!!me.pid && m.fromPid === me.pid);
       // En ranked el propio cliente oculta los nombres del equipo: igual acá, se numeran como "Aliado N". En el resto se ven como en el cliente.
-      const hide = this.s.phase === 'ChampSelect' && [420, 440].includes(this._csQueue || this.s.lobbyQueueId);
+      const inParty = !!this._party && ((m.fromPuuid && this._party.puuids.has(m.fromPuuid)) || (m.fromSummonerId && this._party.sids.has(m.fromSummonerId)));
+      const hide = !inParty && this.s.phase === 'ChampSelect' && [420, 440].includes(this._csQueue || this.s.lobbyQueueId);
       const who = m.fromPuuid || m.fromSummonerId || m.fromId || m.fromPid;
       if (!this._allyNums) this._allyNums = new Map();
-      if (!mine && !this._allyNums.has(who)) this._allyNums.set(who, this._allyNums.size + 1);
+      if (!mine && !inParty && !this._allyNums.has(who)) this._allyNums.set(who, this._allyNums.size + 1);
       let name = '';
       if (mine || !hide) {
         name = (m.fromPuuid && this._puuidNames && this._puuidNames.get(m.fromPuuid)) || (m.fromSummonerId && (this._lobbyNames && this._lobbyNames.get(m.fromSummonerId))) || pn.get(String(m.fromPid)) || pn.get(String(m.fromId)) || pn.get(String(m.fromSummonerId)) || '';
@@ -1241,7 +1335,7 @@ class Engine extends EventEmitter {
       }
       out.push({
         id: m.id,
-        allyN: mine ? 0 : this._allyNums.get(who),
+        allyN: mine || inParty ? 0 : this._allyNums.get(who),
         name,
         body: String(m.body).slice(0, 500),
         mine: !!mine,
