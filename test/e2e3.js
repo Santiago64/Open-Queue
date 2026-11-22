@@ -217,6 +217,78 @@ async function waitFor(fn, label, ms = 6000) {
   assert.strictEqual((await ask('dodge', {})).ok, false);
   ok('dodge: cierra el cliente solo durante el champ select');
 
+  // ---- Ban preparado: se banea solo al llegar tu turno
+  assert((await ask('setPreBan', { championId: 266 })).ok);
+  assert.strictEqual(state.settings.preBan.championId, 266);
+  const nb = mock.calls.length;
+  mock.startChampSelect();
+  await waitFor(() => mock.calls.slice(nb).find((c) => c.method === 'PATCH' && /actions\/0$/.test(c.url) && c.body && c.body.championId === 266 && c.body.completed === true), 'ban preparado');
+  await ask('setPreBan', { championId: null });
+  mock.setPhase('None'); await sleep(300);
+  ok('ban preparado: se banea solo en tu turno de ban');
+
+  // ---- Chat de la sala (antes del champ select)
+  mock.st.chat = [];
+  await ask('search', { queueId: 450 }); mock.setPhase('Lobby');
+  await waitFor(() => state.phase === 'Lobby' && state.chatReady, 'chat de la sala');
+  mock.addChat('hola lobby', 5);
+  await waitFor(() => state.chat.some((c) => c.body === 'hola lobby' && !c.mine), 'mensaje de la sala');
+  assert((await ask('sendChat', { body: 'listo para jugar' })).ok);
+  await waitFor(() => state.chat.some((c) => c.body === 'listo para jugar' && c.mine), 'mi mensaje en la sala');
+  await ask('leaveLobby', {}); await waitFor(() => state.phase === 'None' && !state.chatReady, 'chat cerrado');
+  ok('chat de la sala: se ven los mensajes que escribís y los que te escriben');
+
+  // ---- Nick en el chat de la sala (el cliente manda pid y no summonerId)
+  await ask('search', { queueId: 450 }); mock.setPhase('Lobby');
+  await waitFor(() => state.phase === 'Lobby' && state.chatReady, 'chat sala 2');
+  mock.addRawChat({ body: 'hola desde pid', fromPid: 'p5', fromSummonerId: 0, fromId: 'x5' });
+  mock.addRawChat({ body: 'mio por pid', fromPid: 'pme', fromId: 'me1', fromSummonerId: 0 });
+  await waitFor(() => state.chat.some((c) => c.body === 'hola desde pid' && c.name === 'Amigo Lobby' && !c.mine), 'nick del amigo');
+  assert(state.chat.find((c) => c.body === 'mio por pid').mine);
+  mock.addRawChat({ body: 'solo puuid', fromPuuid: 'other-puu', fromId: 'z@br1', fromPid: 'z@br1', fromSummonerId: 0 });
+  mock.addRawChat({ body: 'yo puuid', fromPuuid: 'my-puu', fromId: 'q@br1', fromPid: 'q@br1', fromSummonerId: 0 });
+  await waitFor(() => state.chat.some((c) => c.body === 'solo puuid' && c.name === 'Por Puuid'), 'nick por puuid');
+  assert(state.chat.find((c) => c.body === 'yo puuid').mine, 'mi mensaje por puuid');
+  await ask('leaveLobby', {}); await waitFor(() => state.phase === 'None', 'fuera');
+  ok('chat de la sala: se ve el nick de quien escribe (aunque el cliente no mande summonerId)');
+
+  // ---- Invitaciones a sala
+  mock.st.invites = [{ invitationId: 'inv1', fromSummonerId: 5, state: 'Pending' }];
+  await waitFor(() => state.invites && state.invites.length === 1, 'invitación pendiente');
+  assert.strictEqual(state.phase, 'None');
+  await ask('setAutoInvite', { enabled: true });
+  await waitFor(() => state.phase === 'Lobby', 'se unió solo');
+  assert(mock.calls.find((c) => c.url === '/lol-lobby/v2/received-invitations/inv1/accept'));
+  await ask('setAutoInvite', { enabled: false });
+  await ask('leaveLobby', {}); await waitFor(() => state.phase === 'None', 'fuera 2');
+  mock.st.invites = [{ invitationId: 'inv2', fromSummonerId: 5, state: 'Pending' }];
+  await waitFor(() => state.invites.length === 1 && state.invites[0].id === 'inv2', 'inv2');
+  assert((await ask('answerInvite', { inviteId: 'inv2', accept: true })).ok);
+  await waitFor(() => state.phase === 'Lobby', 'aceptada a mano');
+  await ask('leaveLobby', {}); await waitFor(() => state.phase === 'None', 'fuera 3');
+  ok('invitaciones: se ven, se aceptan a mano o solas si lo activás');
+
+  // ---- Cambiar el modo de la sala con amigos: nunca se sale de la sala
+  await ask('leaveLobby', {}); mock.st.party = 2; mock.st.putFails = false;
+  await ask('search', { queueId: 450 }); // crea la sala y busca
+  mock.setPhase('Lobby'); await waitFor(() => state.phase === 'Lobby' && state.lobbyQueueId === 450, 'sala aram');
+  const del0 = mock.calls.filter((c) => c.method === 'DELETE' && c.url === '/lol-lobby/v2/lobby').length;
+  const sw = await ask('setLobbyQueue', { queueId: 2400 });
+  assert(sw.ok); await waitFor(() => state.lobbyQueueId === 2400, 'modo cambiado');
+  assert.strictEqual(mock.calls.filter((c) => c.method === 'DELETE' && c.url === '/lol-lobby/v2/lobby').length, del0, 'no debe cerrar la sala');
+  ok('sala con amigos: el modo cambia en la misma sala, sin salirse');
+  mock.st.putFails = true;
+  const sw2 = await ask('setLobbyQueue', { queueId: 450 });
+  assert.strictEqual(sw2.ok, false); assert.strictEqual(sw2.error, 'changeFail');
+  assert.strictEqual(state.lobbyQueueId, 2400); assert.strictEqual(state.phase, 'Lobby');
+  assert.strictEqual(mock.calls.filter((c) => c.method === 'DELETE' && c.url === '/lol-lobby/v2/lobby').length, del0);
+  mock.st.leader = false; mock.st.putFails = false;
+  await ask('setLobbyQueue', { queueId: 450 }); // no líder
+  const sw3 = await ask('setLobbyQueue', { queueId: 450 });
+  assert.strictEqual(sw3.error, 'notHost');
+  mock.st.leader = true; mock.st.party = 1;
+  ok('si el cambio falla con gente en la sala, no te saca; si no sos líder avisa');
+
   ws.close(); await srv.close(); mock.close();
   console.log(`\nTODO OK (${n} comprobaciones)`);
   process.exit(0);

@@ -25,7 +25,8 @@ async function startMock() {
   };
   const lobbyObj = () => ({
     gameConfig: { queueId: st.queueId, gameMode: st.queueId === 480 ? 'SWIFTPLAY' : st.queueId === 450 ? 'ARAM' : st.queueId === 2400 ? 'KIWI' : 'CLASSIC', showQuickPlaySlotSelection: st.queueId === 480, showPositionSelector: [400, 420, 440].includes(st.queueId) },
-    localMember: { playerSlots: st.queueId === 480 ? st.slots : [], firstPositionPreference: st.firstPos || '', secondPositionPreference: st.secondPos || '' },
+    members: Array.from({ length: st.party || 1 }, (_, i) => ({ summonerId: i })),
+    localMember: { isLeader: st.leader !== false, playerSlots: st.queueId === 480 ? st.slots : [], firstPositionPreference: st.firstPos || '', secondPositionPreference: st.secondPos || '' },
   });
   const subs = new Set();
   const emit = (uri, data, eventType = 'Update') => {
@@ -59,7 +60,8 @@ async function startMock() {
         { id: 400, name: 'Draft', queueAvailability: 'Available', category: 'PvP' },
         { id: 1100, name: 'TFT Ranked', queueAvailability: 'Available', category: 'PvP' },
       ]);
-      if (key === 'GET /lol-summoner/v1/current-summoner') return ok({ summonerId: 777, gameName: 'Yo' });
+      if (key === 'GET /lol-summoner/v1/current-summoner') return ok({ summonerId: 777, gameName: 'Yo', puuid: 'my-puu' });
+      if (key === 'GET /lol-summoner/v2/summoners/puuid/other-puu') return ok({ gameName: 'Por Puuid' });
       if ((m = /^GET \/lol-summoner\/v1\/summoners\/(\d+)$/.exec(key))) return ok({ gameName: 'Player' + m[1] });
       if (key === 'GET /lol-perks/v1/pages') return ok(st.pages);
       if (key === 'GET /lol-perks/v1/currentpage') return ok({ id: st.currentPage });
@@ -113,7 +115,8 @@ async function startMock() {
       if ((m = /^GET \/lol-champions\/v1\/inventories\/777\/champions\/(\d+)\/skins$/.exec(key))) return ok([{ id: Number(m[1]) * 1000, isBase: true, name: 'Base', ownership: { owned: true }, tilePath: '/lol-game-data/assets/b.jpg' }, { id: Number(m[1]) * 1000 + 1, name: 'Skin Uno', ownership: { owned: true }, tilePath: '/lol-game-data/assets/s1.jpg' }, { id: Number(m[1]) * 1000 + 2, name: 'No tengo', ownership: { owned: false } }]);
       if (key === 'GET /lol-game-data/assets/v1/summoner-spells.json') return ok([{ id: 1, gameModes: ['CLASSIC', 'ARAM'] }, { id: 3, gameModes: ['CLASSIC', 'ARAM'] }, { id: 4, gameModes: ['CLASSIC', 'ARAM'] }, { id: 6, gameModes: ['CLASSIC', 'ARAM'] }, { id: 7, gameModes: ['CLASSIC', 'ARAM'] }, { id: 11, gameModes: ['CLASSIC'] }, { id: 12, gameModes: ['CLASSIC'] }, { id: 13, gameModes: ['ARAM'] }, { id: 14, gameModes: ['CLASSIC', 'ARAM'] }, { id: 21, gameModes: ['CLASSIC', 'ARAM'] }, { id: 32, gameModes: ['ARAM'] }]);
       if (key === 'DELETE /lol-lobby/v2/lobby') { st.queueId = null; setPhase('None'); return ok(undefined, 204); }
-      if (key === 'POST /lol-lobby/v2/lobby') { st.queueId = b.queueId; setPhase('Lobby'); return ok(lobbyObj()); }
+      if (key === 'PUT /lol-lobby/v2/lobby/queue') { if (st.putFails) return ok({}, 404); st.queueId = Number(b); emit('/lol-lobby/v2/lobby', lobbyObj()); return ok(undefined, 204); }
+      if (key === 'POST /lol-lobby/v2/lobby') { if (st.party > 1 && st.phase === 'Lobby') return ok({}, 409); st.queueId = b.queueId; setPhase('Lobby'); return ok(lobbyObj()); }
       if (key === 'POST /lol-lobby/v2/lobby/matchmaking/search') { setPhase('Matchmaking'); return ok(undefined, 204); }
       if (key === 'DELETE /lol-lobby/v2/lobby/matchmaking/search') { setPhase('Lobby'); return ok(undefined, 204); }
       if (key === 'GET /lol-lobby/v2/lobby/matchmaking/search-state') return ok({ searchState: 'Searching', timeInQueue: 3, estimatedQueueTime: 60 });
@@ -136,7 +139,12 @@ async function startMock() {
       }
       if (key === 'GET /lol-champ-select/v1/pickable-champion-ids') return ok(st.pickable);
       if (key === 'GET /lol-champ-select/v1/bannable-champion-ids') return ok(st.bannable);
-      if (key === 'GET /lol-chat/v1/conversations') return ok([{ id: 'x@champ-select', type: 'championSelect' }, { id: 'y', type: 'chat' }]);
+      if (key === 'GET /lol-lobby/v2/received-invitations') return ok(st.invites || []);
+      if ((m = /^POST \/lol-lobby\/v2\/received-invitations\/(.+)\/accept$/.exec(key))) { st.invites = (st.invites || []).filter((x) => x.invitationId !== m[1]); st.queueId = 450; setPhase('Lobby'); return ok(undefined, 204); }
+      if ((m = /^POST \/lol-lobby\/v2\/received-invitations\/(.+)\/decline$/.exec(key))) { st.invites = (st.invites || []).filter((x) => x.invitationId !== m[1]); return ok(undefined, 204); }
+      if (key === 'GET /lol-chat/v1/me') return ok({ id: 'me1', pid: 'pme', gameName: 'Yo' });
+      if (/^GET \/lol-chat\/v1\/conversations\/.+\/participants$/.test(key)) return ok([{ pid: 'p5', name: 'Amigo Lobby' }, { pid: 'pme', name: 'Yo' }]);
+      if (key === 'GET /lol-chat/v1/conversations') return ok([{ id: 'x@champ-select', type: 'championSelect' }, { id: 'y', type: 'chat' }, { id: 'lob@party', type: 'groupchat' }].filter((c) => c.type !== 'groupchat' || st.lobbyChat !== false));
       if (/^GET \/lol-chat\/v1\/conversations\/.+\/messages$/.test(key)) return ok(st.chat);
       if (/^POST \/lol-chat\/v1\/conversations\/.+\/messages$/.test(key)) {
         st.chat.push({ id: 'm' + (st.chat.length + 1), type: 'chat', body: b.body, fromSummonerId: 777 });
@@ -190,6 +198,7 @@ async function startMock() {
     setPhase, emit,
     startChampSelect() { st.session = mkSession(); setPhase('ChampSelect'); emit('/lol-champ-select/v1/session', st.session); },
     updateSession(fn) { fn(st.session); emit('/lol-champ-select/v1/session', st.session); },
+    addRawChat(msg) { st.chat.push(Object.assign({ id: 'm' + (st.chat.length + 1), type: 'groupchat' }, msg)); emit('/lol-chat/v1/conversations/lob@party/messages', {}); },
     addChat(body, from) { st.chat.push({ id: 'm' + (st.chat.length + 1), type: 'chat', body, fromSummonerId: from }); emit('/lol-chat/v1/conversations/x@champ-select/messages', {}); },
     close() { wss.clients.forEach((c) => c.terminate()); server.close(); fs.rmSync(dir, { recursive: true, force: true }); },
   };
