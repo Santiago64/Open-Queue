@@ -227,6 +227,22 @@ async function waitFor(fn, label, ms = 6000) {
   mock.setPhase('None'); await sleep(300);
   ok('ban preparado: se banea solo en tu turno de ban');
 
+  // ---- Emotes y ward
+  const cd = await ask('cosmeticsData', {});
+  assert(cd.ok); assert.strictEqual(cd.slots.EMOTES_WHEEL_CENTER.name, 'Emote B'); assert.strictEqual(cd.ward.name, 'Ward Uno');
+  assert(cd.ownedEmotes.length >= 3 && cd.ownedWards.length === 2);
+  assert(cd.ownedEmotes.find((e) => e.id === 3120).icon.startsWith('/lcu-asset/lol-game-data/'));
+  assert((await ask('setEmote', { slot: 'EMOTES_WHEEL_UPPER', itemId: 5220 })).ok);
+  assert.strictEqual(mock.st.loadout.loadout.EMOTES_WHEEL_UPPER.itemId, 5220);
+  mock.st.putLoadoutFails = true; // si el juego rechaza PUT, prueba PATCH
+  assert((await ask('setEmote', { slot: 'EMOTES_WHEEL_LEFT', itemId: 4848 })).ok);
+  assert.strictEqual(mock.st.loadout.loadout.EMOTES_WHEEL_LEFT.itemId, 4848);
+  assert((await ask('setWard', { itemId: 7 })).ok);
+  assert.strictEqual(mock.st.loadout.loadout.WARD_SKIN_SLOT.itemId, 7);
+  assert.strictEqual((await ask('setEmote', { slot: 'NOPE', itemId: 1 })).ok, false);
+  mock.st.putLoadoutFails = false;
+  ok('emotes y ward: se listan los tuyos, se cambian en la rueda y se verifica que quedaron');
+
   // ---- Chat de la sala (antes del champ select)
   mock.st.chat = [];
   await ask('search', { queueId: 450 }); mock.setPhase('Lobby');

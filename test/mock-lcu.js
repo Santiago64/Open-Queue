@@ -13,6 +13,7 @@ async function startMock() {
   const password = 'secret123';
   const calls = [];
   const st = {
+    loadout: { id: 'lo1', name: 'x', scope: 'account', loadout: { EMOTES_WHEEL_CENTER: { contentId: '', data: {}, inventoryType: 'EMOTE', itemId: 4848 }, EMOTES_WHEEL_LEFT: { contentId: '', data: {}, inventoryType: 'EMOTE', itemId: 3120 }, WARD_SKIN_SLOT: { contentId: '', data: {}, inventoryType: 'WARD_SKIN', itemId: 1 } } },
     phase: 'None', queueId: null,
     session: null, chat: [], pickable: [1, 2, 3, 22, 266], bannable: [1, 2, 3, 22, 266],
     pages: [{ id: 10, name: 'Page A', isEditable: true, isValid: true }, { id: 11, name: 'Page B', isEditable: true, isValid: true }],
@@ -139,6 +140,16 @@ async function startMock() {
       }
       if (key === 'GET /lol-champ-select/v1/pickable-champion-ids') return ok(st.pickable);
       if (key === 'GET /lol-champ-select/v1/bannable-champion-ids') return ok(st.bannable);
+      if (key === 'GET /lol-loadouts/v4/loadouts/scope/account') return ok([st.loadout]);
+      if ((m = /^(PUT|PATCH) \/lol-loadouts\/v4\/loadouts\/(.+)$/.exec(key))) {
+        if (m[1] === 'PUT' && st.putLoadoutFails) return ok({}, 405);
+        if (m[1] === 'PUT') st.loadout = b; else Object.assign(st.loadout.loadout, b.loadout);
+        return ok(st.loadout);
+      }
+      if (key === 'GET /lol-inventory/v2/inventory/EMOTE') return ok([{ itemId: 3120 }, { itemId: 4848 }, { itemId: 5220 }]);
+      if (key === 'GET /lol-inventory/v2/inventory/WARD_SKIN') return ok([{ itemId: 1 }, { itemId: 7 }]);
+      if (key === 'GET /lol-game-data/assets/v1/summoner-emotes.json') return ok([{ id: 3120, name: 'Emote A', inventoryIcon: '/lol-game-data/assets/ASSETS/e/a.png' }, { id: 4848, name: 'Emote B' }, { id: 5220, name: 'Emote C' }]);
+      if (key === 'GET /lol-game-data/assets/v1/ward-skins.json') return ok([{ id: 1, name: 'Ward Uno', wardImagePath: '/lol-game-data/assets/ASSETS/w/1.png' }, { id: 7, name: 'Ward Siete' }]);
       if (key === 'GET /lol-lobby/v2/received-invitations') return ok(st.invites || []);
       if ((m = /^POST \/lol-lobby\/v2\/received-invitations\/(.+)\/accept$/.exec(key))) { st.invites = (st.invites || []).filter((x) => x.invitationId !== m[1]); st.queueId = 450; setPhase('Lobby'); return ok(undefined, 204); }
       if ((m = /^POST \/lol-lobby\/v2\/received-invitations\/(.+)\/decline$/.exec(key))) { st.invites = (st.invites || []).filter((x) => x.invitationId !== m[1]); return ok(undefined, 204); }
