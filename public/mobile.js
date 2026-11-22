@@ -464,6 +464,7 @@
     h += `<div class="card"><div class="row wrap" style="gap:8px">
       <button class="pill" data-act="openSpell" data-slot="1">${spellImg(me.spell1Id)}<span><small>${t('spells')} 1</small>${esc((S.spellByKey[me.spell1Id] || {}).name || me.spell1Id || '—')}</span></button>
       <button class="pill" data-act="openSpell" data-slot="2">${spellImg(me.spell2Id)}<span><small>${t('spells')} 2</small>${esc((S.spellByKey[me.spell2Id] || {}).name || me.spell2Id || '—')}</span></button>
+      <button class="pill" data-act="openCosmetics" style="flex:1;min-width:140px"><span><small>${t('cosmetics')}</small>${t('coOpen')}</span></button>
       ${noRunes ? '' : `<button class="pill" data-act="openRune" style="flex:1;min-width:140px"><span><small>${t('runes')}</small>${esc(curRune)}</span></button>`}
       ${(me.championId || me.intent) ? `<button class="pill" data-act="openSkins" style="flex:1;min-width:140px"><span><small>${t('skins')}</small>${esc(skinLabel(me))}</span></button>` : ''}</div></div>`;
     h += `<button class="btn block danger" style="margin-top:4px" data-act="dodge">${t('dodge')}</button><p class="note" style="margin:6px 0 0">${t('dodgeHelp')}</p>`;
@@ -542,6 +543,7 @@
       <button class="btn small" data-act="openChamp" data-mode="prepick">${t('chooseChamp')}</button>
       ${id ? `<button class="btn small" data-act="clearPre">${t('prePickClear')}</button>` : ''}</div>
       <p class="note">${t('prePickHelp')}</p></div>
+      <div class="card"><div class="row"><h2>${t('cosmetics')}</h2><span class="spacer"></span><button class="btn small" data-act="openCosmetics">${t('coOpen')}</button></div></div>
       <div class="card"><h2>${t('preBan')}</h2>
       <div class="row">${bid ? champImg(bid) : ''}<div style="flex:1"><div>${bid ? esc(champName(bid)) : `<span class="dim">${t('preBanNone')}</span>`}</div></div>
       <button class="btn small" data-act="openChamp" data-mode="preban">${t('chooseChamp')}</button>
@@ -702,7 +704,8 @@
         <div class="card"><h2>${t('fullscreen')}</h2><p class="note">${t('fullscreenHelp')}</p>
           <button class="btn small" style="margin-top:10px" data-act="fullscreen">${t('fullscreenBtn')}</button></div>
         ${window.OQTheme ? window.OQTheme.html() : ''}
-        <button class="btn block" data-act="unlink">${t('unlink')}</button>`;
+        <button class="btn block" data-act="unlink">${t('unlink')}</button>
+        <p class="note" style="text-align:center;margin-top:12px">Open Queue v${esc(state.version || '?')}</p>`;
     }
     $('sheetList').classList.remove('hidden');
   }
@@ -884,6 +887,40 @@
     $('sheetList').classList.remove('hidden');
   }
 
+  // ---------- emotes y ward ----------
+  const CO = { tab: 'emotes', slot: null, data: null, loading: false, busy: false };
+  async function openCosmetics() {
+    CO.slot = null; CO.data = null;
+    $('slTitle').textContent = t('cosmetics');
+    $('sheetList').classList.remove('hidden');
+    renderCosmetics();
+    CO.loading = true;
+    const r = await request('cosmeticsData', {});
+    CO.loading = false;
+    if (r && r.ok) CO.data = r;
+    renderCosmetics();
+  }
+  function coTile(it, attrs, sel) {
+    if (!it) return `<div class="cotile ${sel ? 'sel' : ''}" ${attrs}><span class="dim">—</span></div>`;
+    return `<div class="cotile ${sel ? 'sel' : ''}" ${attrs}>${it.icon ? `<img alt="" src="${esc(it.icon)}" onerror="this.remove()">` : ''}<span>${esc(it.name)}</span></div>`;
+  }
+  function renderCosmetics() {
+    if ($('sheetList').classList.contains('hidden') || $('slTitle').textContent !== t('cosmetics')) return;
+    const tabs = [['emotes', 'coEmotes'], ['ward', 'coWard']].map(([k, l]) => `<button class="chip ${CO.tab === k ? 'on' : ''}" data-act="coTab" data-v="${k}">${t(l)}</button>`).join('');
+    let h = `<div class="chips" style="margin-bottom:12px">${tabs}</div>`;
+    const d = CO.data;
+    if (!d) h += `<p class="dim">${CO.loading ? t('runesLoading') : t('errGeneric')}</p>`;
+    else if (CO.tab === 'emotes') {
+      const order = ['EMOTES_WHEEL_UPPER_LEFT', 'EMOTES_WHEEL_UPPER', 'EMOTES_WHEEL_UPPER_RIGHT', 'EMOTES_WHEEL_LEFT', 'EMOTES_WHEEL_CENTER', 'EMOTES_WHEEL_RIGHT', 'EMOTES_WHEEL_LOWER_LEFT', 'EMOTES_WHEEL_LOWER', 'EMOTES_WHEEL_LOWER_RIGHT'];
+      h += `<div class="cogrid">${order.map((k) => coTile(d.slots[k], `data-act="coSlot" data-k="${k}"`, CO.slot === k)).join('')}</div>`;
+      h += `<p class="note" style="margin:12px 0 8px">${CO.slot ? t('coPickEmote') : t('coPickSlot')}</p>`;
+      if (CO.slot) h += `<div class="cogrid">${d.ownedEmotes.map((e) => coTile(e, `data-act="coEmote" data-k="${e.id}"`, d.slots[CO.slot] && d.slots[CO.slot].id === e.id)).join('')}</div>`;
+    } else {
+      h += `<p class="note" style="margin-bottom:8px">${t('coWardHelp')}</p><div class="cogrid">${d.ownedWards.map((w) => coTile(w, `data-act="coWard" data-k="${w.id}"`, d.ward && d.ward.id === w.id)).join('')}</div>`;
+    }
+    $('slBody').innerHTML = h;
+  }
+
   function closeSheets() {
     $('sheetChamp').classList.add('hidden');
     $('sheetList').classList.add('hidden');
@@ -899,7 +936,7 @@
     if (id === 'roleFirst' || id === 'roleSecond') cmd('setRoles', { first: $('roleFirst').value, second: $('roleSecond').value });
   });
 
-  document.addEventListener('click', (e) => {
+  document.addEventListener('click', async (e) => {
     const el = e.target.closest('[data-act]');
     if (!el) return;
     const act = el.getAttribute('data-act');
@@ -929,6 +966,18 @@
       case 'clearPre': cmd('setPrePick', { championId: null }); break;
       case 'openSpell': openList('spell', el.getAttribute('data-slot')); break;
       case 'openRune': openRunes(null); break;
+      case 'openCosmetics': openCosmetics(); break;
+      case 'coTab': CO.tab = el.getAttribute('data-v'); renderCosmetics(); break;
+      case 'coSlot': CO.slot = el.getAttribute('data-k'); renderCosmetics(); break;
+      case 'coEmote': case 'coWard': {
+        if (CO.busy) break;
+        CO.busy = true;
+        const id = Number(el.getAttribute('data-k'));
+        const r = await request(act === 'coEmote' ? 'setEmote' : 'setWard', act === 'coEmote' ? { slot: CO.slot, itemId: id } : { itemId: id });
+        if (r && r.ok) { toast(t('coDone')); const nd = await request('cosmeticsData', {}); if (nd && nd.ok) CO.data = nd; } else toast(t('coErr'), 5000);
+        CO.busy = false; renderCosmetics();
+        break;
+      }
       case 'openSkins': openSkins(); break;
       case 'setSkin': cmd('selectSkin', { skinId: Number(el.getAttribute('data-k')) }); closeSheets(); break;
       case 'swap': cmd('swap', { kind: el.getAttribute('data-kind'), swapId: Number(el.getAttribute('data-id')), accept: el.getAttribute('data-accept') === '1' }); break;
