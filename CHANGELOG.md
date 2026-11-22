@@ -60,3 +60,10 @@
 ##  v0.7.7
 - **Chat**: se ve tu nick y el de los demás también en partidas personalizadas (el cliente identifica a quien escribe por otro dato; ahora se reconoce por varios).
 - **ARAM Mayhem personalizada**: se ocultan las runas también en partidas personalizadas (cola 3270).
+
+##  v0.7.8
+- Se muestra la versión en Ajustes y se guarda en el diagnóstico, para saber rápido qué versión está corriendo.
+
+##  v0.8.0
+- **Emotes y ward**: tarjeta "Emotes y ward" (antes del champ select) y botón en el champ select. Armás la rueda de emotes tocando un lugar y eligiendo entre los emotes que tenés, y elegís el ward. Se verifica que el cambio quede aplicado.
+- **Chat en ranked**: los nombres de la gente de tu grupo (party) se ven con su nick; solo se numeran como "Aliado N" los que no están en tu grupo.
