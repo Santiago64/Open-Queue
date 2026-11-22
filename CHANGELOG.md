@@ -44,3 +44,19 @@
 ##  v0.7.4
 - **Modo streamer / Streamer mode** (ventana de la PC): oculta la IP, el QR, el código y la ruta del diagnóstico para grabar o transmitir. Tocás uno para verlo 4 segundos. Se recuerda al reabrir.
 - **Pantalla completa** en el celular (ajustes): oculta la barra del navegador y con ella la IP de la dirección.
+
+##  v0.7.5
+- **Cambiar el modo con amigos en la sala**: el modo se cambia en la misma sala (nunca se sale ni se crea otra). Si el juego no lo permite, avisa y la sala queda igual; si no sos líder, también avisa. Al elegir otro modo en la lista estando en la sala, se cambia en el momento (sin buscar).
+- **Ban preparado**: elegís un campeón y se banea solo cuando llega tu turno de ban.
+- **Chat de la sala** (antes del champ select): se ven los mensajes que escribís y los de tus amigos.
+- Menos parpadeo de los campeones (sobre todo en Brave): la pantalla ya no se redibuja si no cambió nada y las imágenes no se cargan "perezosas".
+- Runas recomendadas: si no hay lugar y tenés que reemplazar una página, ya no sale el mensaje de error de más. Se guarda el detalle en el diagnóstico si falla aplicarlas.
+
+##  v0.7.6
+- **Chat de la sala**: ahora se ve el nick de quien escribe (también si el cliente no informa el invocador del mensaje).
+- **Aceptar invitaciones a sala**: interruptor nuevo (apagado por defecto). Apagado, te avisa y aparece la invitación con Aceptar / Rechazar; encendido, te une solo.
+- **ARAM Mayhem**: se quita el botón de runas porque ese modo no las tiene.
+
+##  v0.7.7
+- **Chat**: se ve tu nick y el de los demás también en partidas personalizadas (el cliente identifica a quien escribe por otro dato; ahora se reconoce por varios).
+- **ARAM Mayhem personalizada**: se ocultan las runas también en partidas personalizadas (cola 3270).
