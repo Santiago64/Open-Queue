@@ -56,6 +56,7 @@ class Engine extends EventEmitter {
     this._lastMyTurnId = null;
     this._lastChatId = null;
     this._userBanChoice = null;
+    this._prebanTurn = null;
     this._banGuardId = null;
     this._skinsFor = null;
     this._lastSwapKey = '';
@@ -80,6 +81,8 @@ class Engine extends EventEmitter {
       champSelect: null,
       runes: { pages: [], currentId: null },
       chat: [],
+      chatReady: false,
+      invites: [],
     };
   }
 
@@ -98,7 +101,7 @@ class Engine extends EventEmitter {
     this.lcu.start();
   }
 
-  stop() { this.lcu.stop(); this._stopReadyCheck(); this._stopChat(); }
+  stop() { clearInterval(this._invInterval); this.lcu.stop(); this._stopReadyCheck(); this._stopChat(); }
 
   snapshot() {
     return Object.assign({}, this.s, { settings: this.settings, maxAutoDelay: MAX_AUTO_DELAY, now: Date.now() });
@@ -122,10 +125,13 @@ class Engine extends EventEmitter {
       this.lcu.request('GET', '/lol-game-queues/v1/queues'),
       this.lcu.request('GET', '/lol-summoner/v1/current-summoner'),
     ]);
-    if (me.status === 200 && me.data) this._mySummonerId = me.data.summonerId;
+    if (me.status === 200 && me.data) { this._mySummonerId = me.data.summonerId; this._myPuuid = me.data.puuid || null; }
     this.s.queues = this._pickQueues(queues.data);
     await this._refreshRunes();
     this._loadSpellModes();
+    clearInterval(this._invInterval);
+    this._invInterval = setInterval(() => this._checkInvites(), 3000);
+    this._checkInvites();
     this._setPhase(typeof phase.data === 'string' ? phase.data : 'None', true);
     this._emitState();
   }
@@ -162,8 +168,10 @@ class Engine extends EventEmitter {
     } else if (uri.endsWith('/champ-select/v1/subset-champion-list')) {
       this._subset = ev.eventType === 'Delete' || !Array.isArray(ev.data) ? [] : ev.data.map(Number);
       if (this.s.champSelect) { this.s.champSelect.subset = this._subset; this._emitState(); }
+    } else if (uri.startsWith('/lol-lobby/v2/received-invitations')) {
+      this._checkInvites();
     } else if (uri.startsWith('/lol-chat/v1/conversations/') && uri.endsWith('/messages')) {
-      if (this.s.phase === 'ChampSelect') this._chatPoll();
+      if (['Lobby', 'Matchmaking', 'ReadyCheck', 'ChampSelect'].includes(this.s.phase)) this._chatPoll();
     } else if (uri === '/lol-perks/v1/currentpage' || uri === '/lol-perks/v1/pages') {
       clearTimeout(this._runesTimer);
       this._runesTimer = setTimeout(() => this._refreshRunes().then(() => this._emitState()), 300);
@@ -200,12 +208,18 @@ class Engine extends EventEmitter {
         perks: perks && Array.isArray(perks.perkIds) ? { primaryStyleId: perks.perkStyle, subStyleId: perks.perkSubStyle, selectedPerkIds: perks.perkIds } : null,
       };
     }) : [];
+    if (Array.isArray(d.members)) {
+      if (!this._lobbyNames) this._lobbyNames = new Map();
+      d.members.forEach((m) => { const nm = m.gameName || m.summonerName || m.summonerInternalName; if (m && m.summonerId && nm) this._lobbyNames.set(m.summonerId, nm); });
+    }
     this._rawSlots = Array.isArray(lm.playerSlots) ? lm.playerSlots : [];
     const quick = !!gc.showQuickPlaySlotSelection || gc.queueId === 480;
     this.s.lobby = {
       queueId: gc.queueId, gameMode: gc.gameMode || '', quickPlay: quick && slots.length > 0, slots,
       showPositionSelector: !!gc.showPositionSelector,
       roles: { first: lm.firstPositionPreference || '', second: lm.secondPositionPreference || '' },
+      members: Array.isArray(d.members) ? d.members.length : 1,
+      isLeader: lm.isLeader !== false,
     };
     if (gc.gameMode) this.s.gameMode = gc.gameMode;
     if (this.s.lobby.quickPlay && !this._ownedLoaded) this._loadOwned();
@@ -313,6 +327,9 @@ class Engine extends EventEmitter {
     }
     if (p === 'None') { this.s.lobbyQueueId = null; this.s.lobby = null; }
 
+    const chatWanted = (x) => ['Lobby', 'Matchmaking', 'ReadyCheck', 'ChampSelect'].includes(x);
+    if (chatWanted(p) && !chatWanted(prev)) this._startChat(); // chat de la sala
+    if (!chatWanted(p) && chatWanted(prev)) this._stopChat();
     if (p === 'ChampSelect' && prev !== 'ChampSelect') {
       this._prepickDone = false;
       this._lastMyTurnId = null;
@@ -329,7 +346,7 @@ class Engine extends EventEmitter {
     }
     if (prev === 'ChampSelect' && p !== 'ChampSelect') {
       this.s.champSelect = null;
-      this._stopChat();
+      if (chatWanted(p)) this._startChat(); else this._stopChat();
     }
     this._emitState();
   }
@@ -408,6 +425,48 @@ class Engine extends EventEmitter {
     this._emitState();
   }
 
+  // ---------- invitaciones a sala ----------
+  setAutoInvite(enabled) {
+    this.settings.autoInvite.enabled = !!enabled;
+    this.store.save();
+    if (enabled) this._checkInvites();
+    this._emitState();
+  }
+
+  async _checkInvites() {
+    if (!this.s.connected || this._invBusy) return;
+    if (!['None', 'Lobby'].includes(this.s.phase)) { if (this.s.invites.length) { this.s.invites = []; this._emitState(); } return; }
+    this._invBusy = true;
+    try {
+      const r = await this.lcu.request('GET', '/lol-lobby/v2/received-invitations');
+      const list = r.status === 200 && Array.isArray(r.data) ? r.data.filter((x) => x && x.invitationId && (!x.state || x.state === 'Pending')) : [];
+      const out = [];
+      for (const x of list) {
+        const from = x.fromSummonerName || (x.fromSummonerId ? await this._nameOf(x.fromSummonerId) : '');
+        out.push({ id: String(x.invitationId), from, queueId: x.gameConfig && x.gameConfig.queueId ? x.gameConfig.queueId : null });
+      }
+      if (this.settings.autoInvite.enabled && out.length) {
+        for (const x of out) await this.lcu.request('POST', `/lol-lobby/v2/received-invitations/${encodeURIComponent(x.id)}/accept`);
+        this.s.invites = [];
+        this._alert('inviteAccepted', { from: out[0].from });
+      } else {
+        const ids = out.map((x) => x.id).join(',');
+        if (ids !== this.s.invites.map((x) => x.id).join(',')) {
+          if (out.length && out.some((x) => !this.s.invites.find((y) => y.id === x.id))) this._alert('invite', { from: out[0].from });
+          this.s.invites = out;
+        }
+      }
+      this._emitState();
+    } finally { this._invBusy = false; }
+  }
+
+  async answerInvite(id, accept) {
+    const r = await this.lcu.request('POST', `/lol-lobby/v2/received-invitations/${encodeURIComponent(String(id))}/${accept ? 'accept' : 'decline'}`);
+    this.s.invites = this.s.invites.filter((x) => x.id !== String(id));
+    this._emitState();
+    return { ok: r.status >= 200 && r.status < 300 };
+  }
+
   // ---------- cola ----------
   async createLobbyAndSearch(queueId) {
     queueId = Number(queueId);
@@ -415,9 +474,8 @@ class Engine extends EventEmitter {
     if (this.s.phase === 'Matchmaking') return { ok: true };
     if (this.s.phase === 'Lobby') {
       if (this.s.lobbyQueueId !== queueId) {
-        await this.lcu.request('DELETE', '/lol-lobby/v2/lobby');
-        const c = await this.lcu.request('POST', '/lol-lobby/v2/lobby', { queueId });
-        if (c.status < 200 || c.status >= 300) return { ok: false, error: 'lobby' };
+        const ch = await this._changeLobbyQueue(queueId);
+        if (!ch.ok) return ch;
       }
     } else if (this.s.phase === 'None') {
       const c = await this.lcu.request('POST', '/lol-lobby/v2/lobby', { queueId });
@@ -429,6 +487,38 @@ class Engine extends EventEmitter {
     if (this.s.lobby && this.s.lobby.showPositionSelector) await this._applyRoles(); // rol principal/secundario antes de buscar
     const r = await this.lcu.request('POST', '/lol-lobby/v2/lobby/matchmaking/search');
     return { ok: r.status >= 200 && r.status < 300, error: r.status >= 300 ? 'search' : undefined };
+  }
+
+  // Cambia el modo de la sala SIN salirte: si hay gente en la sala nunca se cierra la sala.
+  async _changeLobbyQueue(queueId) {
+    await this._fetchLobby();
+    const lb = this.s.lobby || {};
+    if (this.s.lobbyQueueId === queueId) return { ok: true };
+    if (lb.members > 1 && lb.isLeader === false) return { ok: false, error: 'notHost' };
+    const tries = [
+      () => this.lcu.request('PUT', '/lol-lobby/v2/lobby/queue', queueId),
+      () => this.lcu.request('POST', '/lol-lobby/v2/lobby', { queueId }),
+    ];
+    for (const fn of tries) {
+      try { await fn(); } catch (_) {}
+      await this._fetchLobby();
+      if (this.s.lobbyQueueId === queueId) return { ok: true };
+    }
+    if ((lb.members || 1) > 1) return { ok: false, error: 'changeFail' }; // con gente: no cerramos la sala
+    await this.lcu.request('DELETE', '/lol-lobby/v2/lobby');
+    const c = await this.lcu.request('POST', '/lol-lobby/v2/lobby', { queueId });
+    if (c.status < 200 || c.status >= 300) return { ok: false, error: 'lobby' };
+    return { ok: true };
+  }
+
+  // Cambiar el modo de la sala sin buscar partida (para jugar con amigos).
+  async setLobbyQueue(queueId) {
+    queueId = Number(queueId);
+    if (!queueId) return { ok: false, error: 'queue' };
+    if (this.s.phase !== 'Lobby') return { ok: true };
+    const r = await this._changeLobbyQueue(queueId);
+    this._emitState();
+    return r;
   }
 
   // Rol principal y secundario (Normal y Clasificatoria). Se guarda y se aplica al crear la sala.
@@ -469,6 +559,8 @@ class Engine extends EventEmitter {
   _applySession(sess) {
     if (!sess || typeof sess !== 'object') return;
     if (sess.queueId) this._csQueue = Number(sess.queueId);
+    if (!this._puuidNames) this._puuidNames = new Map();
+    [].concat(sess.myTeam || [], sess.theirTeam || []).forEach((p) => { if (p && p.puuid && p.gameName && p.nameVisibilityType !== 'HIDDEN') this._puuidNames.set(p.puuid, p.gameName); });
     const local = sess.localPlayerCellId;
     const groups = Array.isArray(sess.actions) ? sess.actions : [];
     const flat = groups.flat();
@@ -516,6 +608,8 @@ class Engine extends EventEmitter {
     const swapOpts = { pickOrder: opts(sess.pickOrderSwaps), position: opts(sess.positionSwaps), champion: opts(sess.trades || sess.championSwaps) };
     const bansDone = bans.every((o) => o.completed);
     this.s.champSelect = {
+      queueId: this._csQueue || null,
+      subsetPicks: !!sess.allowSubsetChampionPicks, // ARAM Mayhem (también en partidas personalizadas)
       bansDone,
       hasBans: bans.length > 0, // ARAM y otros modos no tienen fase de baneos
       swaps: swapsNow,
@@ -660,7 +754,19 @@ class Engine extends EventEmitter {
     this.s.champSelect.pickable = Array.isArray(p.data) ? p.data : [];
     this.s.champSelect.bannable = Array.isArray(b.data) ? b.data : [];
     await this._maybePrepick();
+    await this._maybePreban();
     this._emitState();
+  }
+
+  // Ban preparado: al llegar tu turno de ban, se banea solo el campeón que dejaste elegido.
+  async _maybePreban() {
+    const cs = this.s.champSelect;
+    const want = this.settings.preBan && this.settings.preBan.championId;
+    if (!cs || !want || !cs.myTurn || cs.myTurn.type !== 'ban' || this._prebanTurn === cs.myTurn.id) return;
+    if (!(cs.bannable || []).length) return; // todavía no hay lista, reintenta luego
+    this._prebanTurn = cs.myTurn.id;
+    if (cs.bannable.includes(want)) await this.lockIn(want);
+    else this._alert('prebanFailed', { championId: want });
   }
 
   async _maybePrepick() {
@@ -710,6 +816,13 @@ class Engine extends EventEmitter {
     if (spell2Id) body.spell2Id = Number(spell2Id);
     const r = await this.lcu.request('PATCH', '/lol-champ-select/v1/session/my-selection', body);
     return { ok: r.status >= 200 && r.status < 300 };
+  }
+
+  setPreBan(championId) {
+    this.settings.preBan.championId = championId ? Number(championId) : null;
+    this._prebanTurn = null;
+    this.store.save();
+    this._emitState();
   }
 
   setPrePick(championId) {
@@ -877,7 +990,8 @@ class Engine extends EventEmitter {
         this._emitState();
         return { ok: true };
       }
-    }
+      if (this._diag) this._diag.useRunesFail = { status: r.status, data: r.data, target: target.id, body };
+    } else if (this._diag) this._diag.useRunesFail = { noTemp: true, pages: this.s.runes.pages, champ };
     return this.saveRunes(Object.assign({}, page, { name: 'Open Queue' })); // sin página temporal: se guarda en una propia
   }
 
@@ -1017,6 +1131,10 @@ class Engine extends EventEmitter {
       calls: d.calls,
       champSelectTimeline: d.csTimeline,
       runeTrail: d.runeTrail || null,
+      useRunesFail: d.useRunesFail || null,
+      chatConvs: d.chatConvs || null,
+      chatSample: d.chatSample || null,
+      chatParticipants: d.chatParticipants || null,
       helpSwap,
       dominationSlots: styleDump,
       events: d.events,
@@ -1039,14 +1157,35 @@ class Engine extends EventEmitter {
     this._chatInterval = null;
     this._chatId = null;
     this.s.chat = [];
+    this.s.chatReady = false;
+    this._allyNums = null;
+    this._chatMe = null;
   }
 
   async _findChat() {
     const r = await this.lcu.request('GET', '/lol-chat/v1/conversations');
     if (r.status === 200 && Array.isArray(r.data)) {
-      const c = r.data.find((x) => x.type === 'championSelect');
+      if (this._diag) this._diag.chatConvs = r.data.map((x) => ({ id: x && x.id, type: x && x.type, name: x && x.name })); // para ajustar el chat de la sala
+      let c;
+      if (this.s.phase === 'ChampSelect') c = r.data.find((x) => x.type === 'championSelect');
+      else {
+        // chat de la sala (grupo/party). El tipo exacto depende del cliente: se prueban los conocidos.
+        for (const ty of ['lobby', 'party', 'groupchat', 'customGame']) { c = r.data.find((x) => x && x.type === ty); if (c) break; }
+        if (!c) c = r.data.find((x) => x && !['chat', 'championSelect', 'postGame', 'system'].includes(x.type)) || r.data.find((x) => x && /lobby|party|custom/i.test(String(x.id)));
+      }
       if (c) this._chatId = c.id;
     }
+    this._emitState();
+  }
+
+  async _nameByPuuid(puuid) {
+    if (!puuid) return '';
+    if (!this._puuidNames) this._puuidNames = new Map();
+    if (this._puuidNames.has(puuid)) return this._puuidNames.get(puuid);
+    const r = await this.lcu.request('GET', `/lol-summoner/v2/summoners/puuid/${encodeURIComponent(puuid)}`);
+    const nm = r.status === 200 && r.data ? (r.data.gameName || r.data.displayName || '') : '';
+    if (nm) this._puuidNames.set(puuid, nm);
+    return nm;
   }
 
   async _nameOf(summonerId) {
@@ -1060,25 +1199,52 @@ class Engine extends EventEmitter {
   }
 
   async _chatPoll() {
-    if (this.s.phase !== 'ChampSelect') return;
+    if (!['Lobby', 'Matchmaking', 'ReadyCheck', 'ChampSelect'].includes(this.s.phase)) return;
     if (!this._chatId) await this._findChat();
     if (!this._chatId) return;
     const r = await this.lcu.request('GET', `/lol-chat/v1/conversations/${encodeURIComponent(this._chatId)}/messages`);
     if (r.status !== 200 || !Array.isArray(r.data)) return;
-    const msgs = r.data.filter((m) => m.type === 'chat' && m.body).slice(-50);
+    const msgs = r.data.filter((m) => (m.type === 'chat' || m.type === 'groupchat') && m.body).slice(-50);
+    if (this._diag) this._diag.chatSample = r.data.slice(-3);
+    // Chat de la sala: los nombres salen de los participantes de la conversación, de la sala o del perfil de chat.
+    const pn = new Map();
+    if (this.s.phase !== 'ChampSelect') {
+      const pr = await this.lcu.request('GET', `/lol-chat/v1/conversations/${encodeURIComponent(this._chatId)}/participants`);
+      if (pr.status === 200 && Array.isArray(pr.data)) {
+        if (this._diag) this._diag.chatParticipants = pr.data;
+        pr.data.forEach((x) => {
+          const nm = x.gameName || x.name || x.displayName;
+          if (!nm) return;
+          [x.pid, x.id, x.summonerId].forEach((k) => { if (k) pn.set(String(k), nm); });
+        });
+      }
+      if (!this._chatMe) {
+        const mr = await this.lcu.request('GET', '/lol-chat/v1/me');
+        if (mr.status === 200 && mr.data) this._chatMe = { id: mr.data.id, pid: mr.data.pid, name: mr.data.gameName || mr.data.name };
+      }
+    }
     const out = [];
     for (const m of msgs) {
-      const mine = m.fromSummonerId === this._mySummonerId;
+      const me = this._chatMe || {};
+      const mine = (this._mySummonerId && m.fromSummonerId === this._mySummonerId) || (!!this._myPuuid && m.fromPuuid === this._myPuuid) || (!!me.id && m.fromId === me.id) || (!!me.pid && m.fromPid === me.pid);
       // En ranked el propio cliente oculta los nombres del equipo: igual acá, se numeran como "Aliado N". En el resto se ven como en el cliente.
-      const hide = [420, 440].includes(this._csQueue || this.s.lobbyQueueId);
+      const hide = this.s.phase === 'ChampSelect' && [420, 440].includes(this._csQueue || this.s.lobbyQueueId);
+      const who = m.fromPuuid || m.fromSummonerId || m.fromId || m.fromPid;
       if (!this._allyNums) this._allyNums = new Map();
-      if (!mine && !this._allyNums.has(m.fromSummonerId)) this._allyNums.set(m.fromSummonerId, this._allyNums.size + 1);
+      if (!mine && !this._allyNums.has(who)) this._allyNums.set(who, this._allyNums.size + 1);
+      let name = '';
+      if (mine || !hide) {
+        name = (m.fromPuuid && this._puuidNames && this._puuidNames.get(m.fromPuuid)) || (m.fromSummonerId && (this._lobbyNames && this._lobbyNames.get(m.fromSummonerId))) || pn.get(String(m.fromPid)) || pn.get(String(m.fromId)) || pn.get(String(m.fromSummonerId)) || '';
+        if (!name && mine && me.name) name = me.name;
+        if (!name && m.fromSummonerId) name = await this._nameOf(m.fromSummonerId);
+        if (!name && m.fromPuuid) name = await this._nameByPuuid(m.fromPuuid);
+      }
       out.push({
         id: m.id,
-        allyN: mine ? 0 : this._allyNums.get(m.fromSummonerId),
-        name: mine || !hide ? await this._nameOf(m.fromSummonerId) : '',
+        allyN: mine ? 0 : this._allyNums.get(who),
+        name,
         body: String(m.body).slice(0, 500),
-        mine: m.fromSummonerId === this._mySummonerId,
+        mine: !!mine,
       });
     }
     const last = out.length ? out[out.length - 1] : null;
@@ -1087,6 +1253,7 @@ class Engine extends EventEmitter {
       this._lastChatId = last.id;
     }
     this.s.chat = out;
+    this.s.chatReady = true;
     this._emitState();
   }
 

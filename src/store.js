@@ -9,6 +9,8 @@ const DEFAULTS = {
   settings: {
     autoAccept: { enabled: false, delay: 0 }, // delay en segundos (0..8)
     prePick: { championId: null },
+    preBan: { championId: null },
+    autoInvite: { enabled: false }, // aceptar solo las invitaciones a sala
     roles: { first: '', second: '' }, // rol principal y secundario para Normal y Clasificatoria
   },
   pairing: { code: null, tokens: [] },
@@ -29,6 +31,8 @@ class Store {
       this.data.settings = Object.assign({}, DEFAULTS.settings, raw.settings || {});
       this.data.settings.autoAccept = Object.assign({}, DEFAULTS.settings.autoAccept, (raw.settings || {}).autoAccept || {});
       this.data.settings.prePick = Object.assign({}, DEFAULTS.settings.prePick, (raw.settings || {}).prePick || {});
+      this.data.settings.autoInvite = Object.assign({}, DEFAULTS.settings.autoInvite, (raw.settings || {}).autoInvite || {});
+      this.data.settings.preBan = Object.assign({}, DEFAULTS.settings.preBan, (raw.settings || {}).preBan || {});
       this.data.settings.roles = Object.assign({}, DEFAULTS.settings.roles, (raw.settings || {}).roles || {});
       this.data.pairing = Object.assign({}, DEFAULTS.pairing, raw.pairing || {});
     } catch (_) { /* primera vez */ }
