@@ -90,6 +90,9 @@
     else if (a.kind === 'swap') { beep([660, 880, 660]); vibrate([200, 100, 200, 100, 200]); }
     else if (a.kind === 'chat') { vibrate(60); }
     else if (a.kind === 'swapDeclined') { toast(`${t('swapSt_DECLINED')}: ${a.to || ''}`, 3500); vibrate([100, 60, 100]); }
+    else if (a.kind === 'invite') { toast(`${t('inviteFrom')} ${a.from || ''}`, 5000); vibrate([100, 60, 100]); }
+    else if (a.kind === 'inviteAccepted') toast(`${t('inviteJoined')} ${a.from || ''}`, 3500);
+    else if (a.kind === 'prebanFailed') { toast(t('preBanFailed'), 5000); vibrate([100, 60, 100]); }
     else if (a.kind === 'prepickFailed') { toast(t('prePickFailed'), 5000); vibrate([100, 60, 100]); }
   }
 
@@ -145,7 +148,7 @@
     if (!key) return `<div class="portrait ${cls}"></div>`;
     const c = S.byKey[key];
     if (!c || !S.version) return `<div class="portrait ${cls}">${esc(key)}</div>`;
-    return `<div class="portrait ${cls}"><img loading="lazy" alt="${esc(c.name)}" src="https://ddragon.leagueoflegends.com/cdn/${S.version}/img/champion/${esc(c.id)}.png" onerror="this.remove()"></div>`;
+    return `<div class="portrait ${cls}"><img alt="${esc(c.name)}" src="https://ddragon.leagueoflegends.com/cdn/${S.version}/img/champion/${esc(c.id)}.png" onerror="this.remove()"></div>`;
   }
   function spellImg(key) {
     const s = S.spellByKey[key];
@@ -216,8 +219,8 @@
     } else if (m.type === 'result') {
       const r = m.result || {};
       if (pending.has(m.id)) { pending.get(m.id)(r); pending.delete(m.id); }
-      if (r.ok === false && !['runeData', 'saveRunes'].includes(m.cmd)) {
-        toast(r.error === 'bansfirst' ? t('pickFirstBans') : r.error === 'rejected' ? t('errRejected') : t('errGeneric'), 3500);
+      if (r.ok === false && !['runeData', 'saveRunes'].includes(m.cmd) && !(m.cmd === 'useRunes' && r.error === 'full')) {
+        toast(r.error === 'notHost' ? t('errNotHost') : r.error === 'changeFail' ? t('errChangeFail') : r.error === 'bansfirst' ? t('pickFirstBans') : r.error === 'rejected' ? t('errRejected') : t('errGeneric'), 3500);
       }
     }
   }
@@ -255,10 +258,14 @@
       const lbl = s === 0 ? t('autoNow') : s === max ? `${t('autoMax')} (${s}${t('seconds')})` : `${s}${t('seconds')}`;
       return `<button class="chip ${Number(a.delay) === s ? 'on' : ''}" data-act="delay" data-v="${s}">${esc(lbl)}</button>`;
     }).join('');
+    const ai = !!(state.settings.autoInvite && state.settings.autoInvite.enabled);
     $('autoCard').innerHTML = `<div class="card">
       <div class="row"><h2>${t('autoTitle')}</h2><span class="spacer"></span><span class="dim" style="font-size:12px">${a.enabled ? t('autoOn') : t('autoOff')}</span><div class="toggle ${a.enabled ? 'on' : ''}" data-act="toggleAuto"></div></div>
       <div style="margin-top:12px" class="${a.enabled ? '' : 'dim'}"><div class="dim" style="font-size:12px;margin-bottom:6px">${t('autoDelay')}</div><div class="chips">${chips}</div></div>
-      <p class="note">${t('autoNote')}</p></div>`;
+      <p class="note">${t('autoNote')}</p></div>
+      <div class="card"><div class="row"><h2>${t('inviteTitle')}</h2><span class="spacer"></span><div class="toggle ${ai ? 'on' : ''}" data-act="toggleInvite"></div></div>
+      <p class="note">${t('inviteHelp')}</p>
+      ${(state.invites || []).map((v) => `<div class="row" style="gap:8px;margin-top:8px"><span style="flex:1">${esc(v.from || '?')}</span><button class="btn primary small" data-act="invAccept" data-k="${esc(v.id)}">${t('accept')}</button><button class="btn small" data-act="invDecline" data-k="${esc(v.id)}">${t('decline')}</button></div>`).join('')}</div>`;
   }
 
   // Escribe un slot de Swiftplay y avisa el motivo si el juego lo rechaza.
@@ -338,6 +345,7 @@
   function renderPhase() {
     const el = $('phaseArea');
     const p = state.phase;
+    if (p !== 'ChampSelect' || !state.connected) el.removeAttribute('data-cs');
     if (!state.connected) { el.innerHTML = `<div class="card"><p style="margin:0">${t('lolOff')}</p></div>`; return; }
 
     if (p === 'None' || p === 'Lobby') {
@@ -368,7 +376,8 @@
           <button class="btn block small" style="margin-top:10px" data-act="decline">${t('decline')}</button></div>`;
       }
     } else if (p === 'ChampSelect') {
-      el.innerHTML = state.champSelect ? champSelectHtml(state.champSelect) : '';
+      const csh = state.champSelect ? champSelectHtml(state.champSelect) : '';
+      if (el.getAttribute('data-cs') !== csh) { el.innerHTML = csh; el.setAttribute('data-cs', csh); } // no se redibuja si no cambió: evita el parpadeo de los campeones
     } else {
       el.innerHTML = `<div class="card"><h2>${t('phase_' + p)}</h2></div>`;
     }
@@ -450,11 +459,12 @@
       ${(cs.hasBans && (cs.bans.my.some((b) => b > 0) || cs.bans.their.some((b) => b > 0))) ? `<h3 style="font-size:12px;color:var(--dim);margin-top:10px">${t('bans')}</h3><div class="row wrap" style="gap:14px"><div class="bans">${bansOf(cs.bans.my)}</div><div class="bans">${bansOf(cs.bans.their)}</div></div>` : ''}</div>`;
 
     const me = cs.myTeam.find((p) => p.isMe) || {};
+    const noRunes = [2400, 3270].includes(Number(cs.queueId)) || cs.subsetPicks || state.gameMode === 'KIWI'; // ARAM Mayhem no tiene runas
     const curRune = (state.runes.pages.find((p) => p.id === state.runes.currentId) || {}).name || '—';
     h += `<div class="card"><div class="row wrap" style="gap:8px">
       <button class="pill" data-act="openSpell" data-slot="1">${spellImg(me.spell1Id)}<span><small>${t('spells')} 1</small>${esc((S.spellByKey[me.spell1Id] || {}).name || me.spell1Id || '—')}</span></button>
       <button class="pill" data-act="openSpell" data-slot="2">${spellImg(me.spell2Id)}<span><small>${t('spells')} 2</small>${esc((S.spellByKey[me.spell2Id] || {}).name || me.spell2Id || '—')}</span></button>
-      <button class="pill" data-act="openRune" style="flex:1;min-width:140px"><span><small>${t('runes')}</small>${esc(curRune)}</span></button>
+      ${noRunes ? '' : `<button class="pill" data-act="openRune" style="flex:1;min-width:140px"><span><small>${t('runes')}</small>${esc(curRune)}</span></button>`}
       ${(me.championId || me.intent) ? `<button class="pill" data-act="openSkins" style="flex:1;min-width:140px"><span><small>${t('skins')}</small>${esc(skinLabel(me))}</span></button>` : ''}</div></div>`;
     h += `<button class="btn block danger" style="margin-top:4px" data-act="dodge">${t('dodge')}</button><p class="note" style="margin:6px 0 0">${t('dodgeHelp')}</p>`;
     return h;
@@ -526,22 +536,28 @@
     const el = $('preCard');
     if (!state.connected || ['InProgress', 'GameStart', 'Reconnect', 'WaitingForStats', 'PreEndOfGame', 'EndOfGame'].includes(state.phase)) { el.innerHTML = ''; return; }
     const id = state.settings.prePick.championId;
+    const bid = state.settings.preBan && state.settings.preBan.championId;
     el.innerHTML = `<div class="card"><h2>${t('prePick')}</h2>
       <div class="row">${id ? champImg(id) : ''}<div style="flex:1"><div>${id ? esc(champName(id)) : `<span class="dim">${t('prePickNone')}</span>`}</div></div>
       <button class="btn small" data-act="openChamp" data-mode="prepick">${t('chooseChamp')}</button>
       ${id ? `<button class="btn small" data-act="clearPre">${t('prePickClear')}</button>` : ''}</div>
-      <p class="note">${t('prePickHelp')}</p></div>`;
+      <p class="note">${t('prePickHelp')}</p></div>
+      <div class="card"><h2>${t('preBan')}</h2>
+      <div class="row">${bid ? champImg(bid) : ''}<div style="flex:1"><div>${bid ? esc(champName(bid)) : `<span class="dim">${t('preBanNone')}</span>`}</div></div>
+      <button class="btn small" data-act="openChamp" data-mode="preban">${t('chooseChamp')}</button>
+      ${bid ? `<button class="btn small" data-act="clearPreBan">${t('prePickClear')}</button>` : ''}</div>
+      <p class="note">${t('preBanHelp')}</p></div>`;
   }
 
   function renderChat() {
     const card = $('chatCard');
-    const show = state.connected && state.phase === 'ChampSelect';
+    const show = state.connected && (state.phase === 'ChampSelect' || (['Lobby', 'Matchmaking', 'ReadyCheck'].includes(state.phase) && state.chatReady));
     card.classList.toggle('hidden', !show);
     if (!show) return;
     const box = $('chatMsgs');
     const atBottom = box.scrollHeight - box.scrollTop - box.clientHeight < 40;
-    box.innerHTML = state.chat.map((m) => `<div class="m ${m.mine ? 'mine' : ''}"><b>${esc(m.name || (t('ally') + ' ' + m.allyN))}</b>${esc(m.body)}</div>`).join('');
-    if (atBottom) box.scrollTop = box.scrollHeight;
+    const chatHtml = state.chat.map((m) => `<div class="m ${m.mine ? 'mine' : ''}"><b>${esc(m.name || (t('ally') + ' ' + m.allyN))}</b>${esc(m.body)}</div>`).join('');
+    if (box._h !== chatHtml) { box.innerHTML = chatHtml; box._h = chatHtml; if (atBottom) box.scrollTop = box.scrollHeight; }
   }
 
   // ---------- temporizadores ----------
@@ -585,7 +601,7 @@
       if (own && own.length) { const ok = new Set(own); S.champions.forEach((c) => { if (!ok.has(c.key)) d.add(c.key); }); }
       return d;
     }
-    if (!cs || sheet.mode === 'prepick') return d;
+    if (!cs || sheet.mode === 'prepick' || sheet.mode === 'preban') return d;
     cs.bans.my.concat(cs.bans.their).forEach((b) => { if (b > 0) d.add(b); });
     const isBan = sheet.mode === 'turn' && cs.myTurn && cs.myTurn.type === 'ban';
     if (!isBan) {
@@ -612,6 +628,7 @@
     const cs = state.champSelect;
     const banTurn = mode === 'turn' && cs && cs.myTurn && cs.myTurn.type === 'ban';
     sheet.champ = mode === 'prepick' ? state.settings.prePick.championId
+      : mode === 'preban' ? state.settings.preBan.championId
       : banTurn ? null // en un ban nunca se arranca con un campeón marcado
       : (cs && cs.myTurn && cs.myTurn.championId) || (cs && cs.myPickAction && cs.myPickAction.championId) || null;
     sheet.search = ''; sheet.cls = '';
@@ -630,7 +647,7 @@
 
     if (sheet.mode === 'qslot' && !(state && state.lobby && state.lobby.quickPlay)) { closeSheets(); return; }
     const isBan = sheet.mode === 'turn' && cs && cs.myTurn && cs.myTurn.type === 'ban';
-    $('scTitle').textContent = sheet.mode === 'prepick' ? t('prePick') : isBan ? t('chooseBan') : t('chooseChamp');
+    $('scTitle').textContent = sheet.mode === 'prepick' ? t('prePick') : sheet.mode === 'preban' ? t('preBan') : isBan ? t('chooseBan') : t('chooseChamp');
     $('scNoData').textContent = S.ok ? '' : t('noData');
 
     const classes = ['Fighter', 'Tank', 'Mage', 'Assassin', 'Marksman', 'Support'];
@@ -641,13 +658,15 @@
     let items = S.champions.length ? S.champions : ((cs && cs.pickable) || []).map((k) => ({ key: k, name: String(k), tags: [] }));
     const q = norm(sheet.search.trim());
     items = items.filter((c) => (!sheet.cls || (c.tags || []).includes(sheet.cls)) && (!q || norm(c.name).includes(q)));
-    $('scGrid').innerHTML = items.map((c) => {
+    const gridHtml = items.map((c) => {
       const isOff = off.has(c.key);
       return `<div class="cell ${sheet.champ === c.key ? 'sel' : ''} ${isOff ? 'off' : ''}" data-act="pickCell" data-k="${c.key}">${champImg(c.key)}<span>${esc(c.name)}</span></div>`;
     }).join('');
+    const gridEl = $('scGrid');
+    if (gridEl._h !== gridHtml) { gridEl.innerHTML = gridHtml; gridEl._h = gridHtml; }
 
     const btn = $('scConfirm');
-    if (sheet.mode === 'prepick' || sheet.mode === 'qslot') { btn.textContent = t('confirm'); btn.disabled = !sheet.champ; }
+    if (sheet.mode === 'prepick' || sheet.mode === 'preban' || sheet.mode === 'qslot') { btn.textContent = t('confirm'); btn.disabled = !sheet.champ; }
     else if (sheet.mode === 'turn') { btn.textContent = isBan ? t('confirmBan') : t('confirmPick'); btn.disabled = !sheet.champ; }
     else { btn.textContent = t('confirm'); btn.disabled = false; }
   }
@@ -829,7 +848,7 @@
     const r = await request('ownedSkins', { championId: sl.championId });
     const list = (r && r.skins) || [];
     $('slBody').innerHTML = list.length
-      ? `<div class="grid" style="grid-template-columns:repeat(auto-fill,minmax(130px,1fr))">${list.map((sk) => `<div class="cell ${sk.id === sl.skinId ? 'sel' : ''}" data-act="setQSkin" data-k="${sk.id}">${sk.tile && runeIcon(sk.tile) ? `<img src="${runeIcon(sk.tile)}" alt="" style="width:100%;display:block;margin-bottom:4px" loading="lazy">` : ''}<span>${esc(sk.name || t('skinDefault'))}</span></div>`).join('')}</div>`
+      ? `<div class="grid" style="grid-template-columns:repeat(auto-fill,minmax(130px,1fr))">${list.map((sk) => `<div class="cell ${sk.id === sl.skinId ? 'sel' : ''}" data-act="setQSkin" data-k="${sk.id}">${sk.tile && runeIcon(sk.tile) ? `<img src="${runeIcon(sk.tile)}" alt="" style="width:100%;display:block;margin-bottom:4px">` : ''}<span>${esc(sk.name || t('skinDefault'))}</span></div>`).join('')}</div>`
       : `<p class="dim">${t('noSkins')}</p>`;
   }
 
@@ -860,7 +879,7 @@
     const cur = me ? me.skinId : 0;
     const list = state.skins || [];
     $('slBody').innerHTML = list.length
-      ? `<div class="grid" style="grid-template-columns:repeat(auto-fill,minmax(130px,1fr))">${list.map((sk) => `<div class="cell ${sk.id === cur ? 'sel' : ''}" data-act="setSkin" data-k="${sk.id}">${sk.tile && runeIcon(sk.tile) ? `<img src="${runeIcon(sk.tile)}" alt="" style="width:100%;display:block;margin-bottom:4px" loading="lazy">` : ''}<span>${esc(sk.name || t('skinDefault'))}</span></div>`).join('')}</div>`
+      ? `<div class="grid" style="grid-template-columns:repeat(auto-fill,minmax(130px,1fr))">${list.map((sk) => `<div class="cell ${sk.id === cur ? 'sel' : ''}" data-act="setSkin" data-k="${sk.id}">${sk.tile && runeIcon(sk.tile) ? `<img src="${runeIcon(sk.tile)}" alt="" style="width:100%;display:block;margin-bottom:4px">` : ''}<span>${esc(sk.name || t('skinDefault'))}</span></div>`).join('')}</div>`
       : `<p class="dim">${t('noSkins')}</p>`;
     $('sheetList').classList.remove('hidden');
   }
@@ -874,7 +893,7 @@
   // ---------- eventos de la interfaz ----------
   document.addEventListener('change', (e) => {
     const id = e.target && e.target.id;
-    if (id === 'queueSel' && Number(e.target.value)) { rememberQueue(Number(e.target.value)); updateQueueCard(state.phase); }
+    if (id === 'queueSel' && Number(e.target.value)) { rememberQueue(Number(e.target.value)); updateQueueCard(state.phase); if (state.phase === 'Lobby' && Number(e.target.value) !== Number(state.lobbyQueueId)) cmd('setLobbyQueue', { queueId: Number(e.target.value) }); }
     if (id === 'ruTarget') { RU.target = e.target.value; renderRunes(); }
     if (id === 'ruName') RU.newName = e.target.value;
     if (id === 'roleFirst' || id === 'roleSecond') cmd('setRoles', { first: $('roleFirst').value, second: $('roleSecond').value });
@@ -886,6 +905,9 @@
     const act = el.getAttribute('data-act');
     const v = el.getAttribute('data-v');
     switch (act) {
+      case 'toggleInvite': cmd('setAutoInvite', { enabled: !(state.settings.autoInvite && state.settings.autoInvite.enabled) }); break;
+      case 'invAccept': cmd('answerInvite', { inviteId: el.getAttribute('data-k'), accept: true }); break;
+      case 'invDecline': cmd('answerInvite', { inviteId: el.getAttribute('data-k'), accept: false }); break;
       case 'toggleAuto': cmd('setAutoAccept', { enabled: !state.settings.autoAccept.enabled }); break;
       case 'delay': cmd('setAutoAccept', { delay: Number(v) }); break;
       case 'search': { const q = $('queueSel') ? Number($('queueSel').value) : 0; if (q) rememberQueue(q); cmd('search', { queueId: q }); break; }
@@ -903,6 +925,7 @@
         renderSheets();
         break;
       }
+      case 'clearPreBan': cmd('setPreBan', { championId: null }); break;
       case 'clearPre': cmd('setPrePick', { championId: null }); break;
       case 'openSpell': openList('spell', el.getAttribute('data-slot')); break;
       case 'openRune': openRunes(null); break;
@@ -1018,6 +1041,7 @@
 
   $('scConfirm').addEventListener('click', () => {
     if (sheet.mode === 'prepick') cmd('setPrePick', { championId: sheet.champ });
+    else if (sheet.mode === 'preban') cmd('setPreBan', { championId: sheet.champ });
     else if (sheet.mode === 'qslot') slotCmd({ index: sheet.qi, patch: { championId: sheet.champ } });
     else if (sheet.mode === 'turn') cmd('lockIn', { championId: sheet.champ });
     closeSheets();
