@@ -39,8 +39,8 @@ It only talks to the League client on `127.0.0.1` and to your phone on your loca
 
 ## Support the project
 Open Queue is and will stay free. If it saved you a dodge and you want to say thanks:
-- [Ko-fi](https://ko-fi.com/KOFI_USER) (international, PayPal / cards)
-- [Cafecito](https://cafecito.app/CAFECITO_USER) (Argentina, Mercado Pago)
+- [Ko-fi](https://ko-fi.com/firewrathness) (international, PayPal / cards)
+- [Cafecito](https://cafecito.app/firewrathness) (Argentina, Mercado Pago)
 
 Donations are optional and unlock nothing: every feature is free for everyone.
 
@@ -84,8 +84,8 @@ Solo habla con el cliente de LoL en `127.0.0.1` y con tu celu en tu red local. S
 
 ### Apoyar el proyecto
 Open Queue es y seguirá siendo gratis. Si te sirvió y querés agradecer:
-- [Ko-fi](https://ko-fi.com/KOFI_USER) (exterior, PayPal / tarjeta)
-- [Cafecito](https://cafecito.app/CAFECITO_USER) (Argentina, Mercado Pago)
+- [Ko-fi](https://ko-fi.com/firewrathness) (exterior, PayPal / tarjeta)
+- [Cafecito](https://cafecito.app/firewrathness) (Argentina, Mercado Pago)
 
 Las donaciones son opcionales y no desbloquean nada: todas las funciones son gratis para todos.
 
