@@ -70,3 +70,6 @@
 
 ##  v0.8.1
 - **Invitar amigos a la sala**: botón "+ Invitar amigos" en la sala. Lista de tu gente conectada con su ícono, su estado (fuera de partida, en sala, en partida con el tiempo, móvil) y buscador; tocás y se envía la invitación.
+
+##  v0.8.2
+- **Invitar amigos**: el reloj de los que están en partida avanza segundo a segundo y la lista se actualiza sola cada 10 segundos (estados, quién entra o sale de partida).
