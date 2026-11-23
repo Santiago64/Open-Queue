@@ -227,6 +227,17 @@ async function waitFor(fn, label, ms = 6000) {
   mock.setPhase('None'); await sleep(300);
   ok('ban preparado: se banea solo en tu turno de ban');
 
+  // ---- Crear sala sin buscar
+  assert.strictEqual(state.phase, 'None');
+  const nSearch = mock.calls.filter((c) => c.url === '/lol-lobby/v2/lobby/matchmaking/search').length;
+  assert((await ask('createLobby', { queueId: 450 })).ok);
+  mock.setPhase('Lobby'); await waitFor(() => state.phase === 'Lobby' && state.lobbyQueueId === 450, 'sala creada sin buscar');
+  assert.strictEqual(mock.calls.filter((c) => c.url === '/lol-lobby/v2/lobby/matchmaking/search').length, nSearch, 'no debe buscar');
+  assert((await ask('createLobby', { queueId: 2400 })).ok); // ya en sala: cambia el modo
+  await waitFor(() => state.lobbyQueueId === 2400, 'modo en sala');
+  await ask('leaveLobby', {}); await waitFor(() => state.phase === 'None', 'fuera crear');
+  ok('crear sala sin buscar: entrás a la sala para invitar amigos antes');
+
   // ---- Invitar amigos
   const fr = await ask('friends', {});
   assert(fr.ok); assert.deepStrictEqual(fr.friends.map((f) => f.name), ['Amigo Uno#AR1', 'Amigo Dos#AR2', 'Con Celu#M']);
