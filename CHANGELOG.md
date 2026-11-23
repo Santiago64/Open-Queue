@@ -76,3 +76,15 @@
 
 ##  v0.8.3
 - **Crear sala sin buscar**: botón "Crear sala (sin buscar)" en la pantalla principal. Entrás a la sala del modo elegido sin empezar la búsqueda, para invitar amigos primero (ya no hay que buscar y cancelar).
+
+##  v0.8.4
+- **Chat en ranked**: en vez de "Aliado 1/2…" se muestra el apodo anónimo que ve el cliente (por ejemplo "Escarabajo Rocoso"), en el idioma del juego.
+- **Chat**: junto al nombre aparece el ícono del campeón (si ya eligió o tiene intención de pick) y su línea, para saber enseguida quién habla.
+- **Cancelar pedidos de cambio**: los pedidos enviados (orden de pick, rol o campeón) quedan visibles con un botón "Cancelar pedido", sin tener que volver a abrir el modo de cambio.
+- Diagnóstico: se agrega `chatCells` para ver qué datos manda el cliente en ranked.
+
+##  v0.8.5
+- Emotes y wards: se quitó el botón repetido junto a las runas en el champ select; queda solo el de la tarjeta de pick/ban preparados.
+
+##  v0.8.6
+- Pick preparado: ya no muestra el aviso falso "baneado" al entrar al champ select. Solo avisa si el campeón figura de verdad en los baneos; si la lista del cliente aún está incompleta, reintenta.

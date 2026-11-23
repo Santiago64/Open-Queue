@@ -6,6 +6,16 @@ Free, open-source companion for the League of Legends client. Control your own c
 
 > Open Queue isn't endorsed by Riot Games and doesn't reflect the views or opinions of Riot Games or anyone officially involved in producing or managing Riot Games properties. Riot Games, and all associated properties are trademarks or registered trademarks of Riot Games, Inc.
 
+## Demo
+
+**Real match / Partida real**
+
+VIDEO_PARTIDA_URL
+
+**Practice Tool (all features) / Herramienta de práctica**
+
+VIDEO_PRACTICE_URL
+
 ## Features
 - Pair with a QR code or a 6-digit code. Accept/decline the match from your phone, or **auto-accept with a configurable delay (0-8 s)** that runs on the PC even if the phone disconnects.
 - Queue for current modes: Normal Draft/Blind, Ranked Solo/Duo and Flex, ARAM, ARAM Mayhem, Swiftplay, TFT. Primary/secondary role before searching.
