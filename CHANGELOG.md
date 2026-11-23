@@ -73,3 +73,6 @@
 
 ##  v0.8.2
 - **Invitar amigos**: el reloj de los que están en partida avanza segundo a segundo y la lista se actualiza sola cada 10 segundos (estados, quién entra o sale de partida).
+
+##  v0.8.3
+- **Crear sala sin buscar**: botón "Crear sala (sin buscar)" en la pantalla principal. Entrás a la sala del modo elegido sin empezar la búsqueda, para invitar amigos primero (ya no hay que buscar y cancelar).
