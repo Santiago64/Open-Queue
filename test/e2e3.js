@@ -227,6 +227,19 @@ async function waitFor(fn, label, ms = 6000) {
   mock.setPhase('None'); await sleep(300);
   ok('ban preparado: se banea solo en tu turno de ban');
 
+  // ---- Invitar amigos
+  const fr = await ask('friends', {});
+  assert(fr.ok); assert.deepStrictEqual(fr.friends.map((f) => f.name), ['Amigo Uno#AR1', 'Amigo Dos#AR2', 'Con Celu#M']);
+  assert.strictEqual(fr.friends[1].status, 'ingame'); assert.strictEqual(fr.friends[1].queue, 'ARAM Mayhem'); assert.strictEqual(fr.friends[1].icon, 5); assert.strictEqual(fr.friends[2].status, 'mobile');
+  assert.strictEqual((await ask('inviteFriend', { summonerId: 11 })).error, 'notLobby');
+  await ask('search', { queueId: 450 }); mock.setPhase('Lobby'); await waitFor(() => state.phase === 'Lobby', 'sala para invitar');
+  assert((await ask('inviteFriend', { summonerId: 11 })).ok);
+  const ic = mock.calls.filter((c) => c.method === 'POST' && c.url === '/lol-lobby/v2/lobby/invitations').pop();
+  assert.deepStrictEqual(ic.body, [{ toSummonerId: 11 }]);
+  mock.st.inviteFails = true; assert.strictEqual((await ask('inviteFriend', { summonerId: 11 })).error, 'inviteFail'); mock.st.inviteFails = false;
+  await ask('leaveLobby', {}); await waitFor(() => state.phase === 'None', 'fuera inv');
+  ok('invitar amigos: lista de conectados con estado y envío de invitación a la sala');
+
   // ---- Emotes y ward
   const cd = await ask('cosmeticsData', {});
   assert(cd.ok); assert.strictEqual(cd.slots.EMOTES_WHEEL_CENTER.name, 'Emote B'); assert.strictEqual(cd.ward.name, 'Ward Uno');

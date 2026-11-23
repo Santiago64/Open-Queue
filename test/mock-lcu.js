@@ -140,6 +140,14 @@ async function startMock() {
       }
       if (key === 'GET /lol-champ-select/v1/pickable-champion-ids') return ok(st.pickable);
       if (key === 'GET /lol-champ-select/v1/bannable-champion-ids') return ok(st.bannable);
+      if (key === 'GET /lol-chat/v1/friends') return ok([
+        { summonerId: 11, gameName: 'Amigo Uno', gameTag: 'AR1', availability: 'chat', product: 'league_of_legends', lol: { gameStatus: 'outOfGame' } },
+        { summonerId: 12, gameName: 'Amigo Dos', gameTag: 'AR2', availability: 'dnd', product: 'league_of_legends', icon: 5, lol: { gameStatus: 'inGame', gameQueueType: 'KIWI', timeStamp: Date.now() - 184000 } },
+        { summonerId: 15, gameName: 'Con Celu', gameTag: 'M', availability: 'mobile', product: 'league_of_legends', icon: 29 },
+        { summonerId: 13, gameName: 'Desconectado', gameTag: 'X', availability: 'offline', product: 'league_of_legends' },
+        { summonerId: 14, gameName: 'En Valorant', gameTag: 'X', availability: 'chat', product: 'valorant' },
+      ]);
+      if (key === 'POST /lol-lobby/v2/lobby/invitations') return st.inviteFails ? ok({}, 500) : ok([{ invitationId: 'i1' }]);
       if (key === 'GET /lol-loadouts/v4/loadouts/scope/account') return ok([st.loadout]);
       if ((m = /^(PUT|PATCH) \/lol-loadouts\/v4\/loadouts\/(.+)$/.exec(key))) {
         if (m[1] === 'PUT' && st.putLoadoutFails) return ok({}, 405);
