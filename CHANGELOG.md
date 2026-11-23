@@ -67,3 +67,6 @@
 ##  v0.8.0
 - **Emotes y ward**: tarjeta "Emotes y ward" (antes del champ select) y botón en el champ select. Armás la rueda de emotes tocando un lugar y eligiendo entre los emotes que tenés, y elegís el ward. Se verifica que el cambio quede aplicado.
 - **Chat en ranked**: los nombres de la gente de tu grupo (party) se ven con su nick; solo se numeran como "Aliado N" los que no están en tu grupo.
+
+##  v0.8.1
+- **Invitar amigos a la sala**: botón "+ Invitar amigos" en la sala. Lista de tu gente conectada con su ícono, su estado (fuera de partida, en sala, en partida con el tiempo, móvil) y buscador; tocás y se envía la invitación.
