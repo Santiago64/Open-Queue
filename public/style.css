@@ -133,3 +133,19 @@ body.stream .secret.peek { filter: none; }
 .cotile{border:1px solid #333;padding:6px;text-align:center;font-size:11px;min-height:72px;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:4px;cursor:pointer;word-break:break-word}
 .cotile.sel{border-color:#fff;background:#1a1a1a}
 .cotile img{width:44px;height:44px;object-fit:contain}
+
+.btn.dashed{border-style:dashed}
+.frlist{display:flex;flex-direction:column}
+.frrow{display:flex;align-items:center;gap:12px;padding:10px 4px;border-bottom:1px solid #222;cursor:pointer}
+.frrow.off{opacity:.45;cursor:default}
+.fravatar{position:relative;width:48px;height:48px;border-radius:50%;border:2px solid #666;background:#111;flex:none}
+.fravatar img{width:100%;height:100%;border-radius:50%;object-fit:cover;display:block}
+.frdot{position:absolute;right:-2px;bottom:-2px;width:14px;height:14px;border-radius:50%;border:2px solid #000;background:#fff}
+.frdot.away,.frdot.dnd{background:#000;border-color:#fff}
+.frdot.busy{background:#999}
+.frdot.ingame{background:#555;border-color:#aaa}
+.frdot.mobile{background:#333;border-color:#777}
+.frinfo{flex:1;min-width:0}
+.frname{font-weight:600;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.frtext{font-size:12px;opacity:.65}
+.frbtn{border:1px solid #fff;padding:4px 10px;font-size:12px}

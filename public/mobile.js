@@ -326,7 +326,7 @@
     }
     const leave = $('leaveBox');
     const wantLeave = p === 'Lobby';
-    if (!!leave.firstChild !== wantLeave) leave.innerHTML = wantLeave ? `<button class="btn block" style="margin-top:8px" data-act="leave">${t('leaveLobby')}</button>` : '';
+    if (!!leave.firstChild !== wantLeave) leave.innerHTML = wantLeave ? `<button class="btn block dashed" style="margin-top:8px" data-act="openFriends">+ ${t('inviteFriends')}</button><button class="btn block" style="margin-top:8px" data-act="leave">${t('leaveLobby')}</button>` : '';
     // roles
     const box = $('rolesBox');
     const wantRoles = ROLE_QUEUES.includes(Number(sel.value));
@@ -887,6 +887,48 @@
     $('sheetList').classList.remove('hidden');
   }
 
+  // ---------- invitar amigos ----------
+  const FR = { list: null, q: '', sent: new Set(), loading: false };
+  async function openFriends() {
+    FR.list = null; FR.q = '';
+    $('slTitle').textContent = t('inviteFriends');
+    $('sheetList').classList.remove('hidden');
+    renderFriends();
+    FR.loading = true;
+    const r = await request('friends', {});
+    FR.loading = false;
+    if (r && r.ok) FR.list = r.friends;
+    renderFriends();
+  }
+  function friendText(f) {
+    const mins = f.since ? Math.max(0, Math.floor((Date.now() - f.since) / 1000)) : 0;
+    const clock = f.since ? ` ${Math.floor(mins / 60)}:${String(mins % 60).padStart(2, '0')}` : '';
+    if (f.status === 'mobile') return t('fr_mobile');
+    if (f.status === 'ingame') return `${f.queue || t('fr_ingame')}${clock}`;
+    if (f.gs && f.gs.startsWith('hosting')) return `${t('frLobby')}: ${f.queue}`.replace(/: $/, '');
+    if (f.gs === 'championSelect') return t('frSelect');
+    if (f.gs === 'inQueue') return `${t('frQueue')}${f.queue ? ': ' + f.queue : ''}`;
+    if (f.status === 'away') return t('fr_away');
+    if (f.status === 'dnd') return t('fr_dnd');
+    return t('frOut');
+  }
+  function friendAvatar(f) {
+    const src = f.icon && S.version ? `https://ddragon.leagueoflegends.com/cdn/${S.version}/img/profileicon/${f.icon}.png` : '';
+    return `<div class="fravatar">${src ? `<img alt="" src="${esc(src)}" onerror="this.remove()">` : ''}<i class="frdot ${esc(f.status)}"></i></div>`;
+  }
+  function renderFriends() {
+    if ($('sheetList').classList.contains('hidden') || $('slTitle').textContent !== t('inviteFriends')) return;
+    const q = FR.q.trim().toLowerCase();
+    let h = `<input id="frQ" class="input" placeholder="${esc(t('frSearch'))}" value="${esc(FR.q)}" style="width:100%;margin-bottom:12px">`;
+    if (!FR.list) h += `<p class="dim">${FR.loading ? t('runesLoading') : t('errGeneric')}</p>`;
+    else {
+      const items = FR.list.filter((f) => !q || f.name.toLowerCase().includes(q));
+      h += items.length ? `<div class="frlist">${items.map((f) => `<div class="frrow ${f.status === 'mobile' ? 'off' : ''}" ${f.status === 'mobile' ? '' : `data-act="invFriend" data-k="${f.id}"`}>${friendAvatar(f)}<div class="frinfo"><div class="frname">${esc(f.name)}</div><div class="frtext">${esc(friendText(f))}</div></div>${f.status === 'mobile' ? '' : `<b class="frbtn">${FR.sent.has(f.id) ? t('frSent') : t('frInvite')}</b>`}</div>`).join('')}</div>` : `<p class="dim">${t('frNone')}</p>`;
+    }
+    $('slBody').innerHTML = h;
+    const inp = $('frQ'); if (inp) inp.oninput = (e) => { FR.q = e.target.value; const pos = e.target.selectionStart; renderFriends(); const n = $('frQ'); if (n) { n.focus(); n.setSelectionRange(pos, pos); } };
+  }
+
   // ---------- emotes y ward ----------
   const CO = { tab: 'emotes', slot: null, data: null, loading: false, busy: false };
   async function openCosmetics() {
@@ -967,6 +1009,14 @@
       case 'openSpell': openList('spell', el.getAttribute('data-slot')); break;
       case 'openRune': openRunes(null); break;
       case 'openCosmetics': openCosmetics(); break;
+      case 'openFriends': openFriends(); break;
+      case 'invFriend': {
+        const id = Number(el.getAttribute('data-k'));
+        const r = await request('inviteFriend', { summonerId: id });
+        if (r && r.ok) { FR.sent.add(id); toast(t('frSentToast')); } else toast(t('frErr'), 5000);
+        renderFriends();
+        break;
+      }
       case 'coTab': CO.tab = el.getAttribute('data-v'); renderCosmetics(); break;
       case 'coSlot': CO.slot = el.getAttribute('data-k'); renderCosmetics(); break;
       case 'coEmote': case 'coWard': {
