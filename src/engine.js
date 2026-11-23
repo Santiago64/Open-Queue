@@ -52,7 +52,7 @@ class Engine extends EventEmitter {
     this._chatId = null;
     this._nameCache = new Map();
     this._mySummonerId = null;
-    this._prepickDone = false;
+    this._prepickDone = false; this._prepickTries = 0;
     this._listTimer = null;
     this._emitTimer = null;
     this._runesTimer = null;
@@ -338,7 +338,7 @@ class Engine extends EventEmitter {
     if (chatWanted(p) && !chatWanted(prev)) this._startChat(); // chat de la sala
     if (!chatWanted(p) && chatWanted(prev)) this._stopChat();
     if (p === 'ChampSelect' && prev !== 'ChampSelect') {
-      this._prepickDone = false;
+      this._prepickDone = false; this._prepickTries = 0;
       this._lastMyTurnId = null;
       this._userBanChoice = null;
       this._banGuardId = null;
@@ -631,6 +631,7 @@ class Engine extends EventEmitter {
     if (sess.queueId) this._csQueue = Number(sess.queueId);
     if (!this._puuidNames) this._puuidNames = new Map();
     [].concat(sess.myTeam || [], sess.theirTeam || []).forEach((p) => { if (p && p.puuid && p.gameName && p.nameVisibilityType !== 'HIDDEN') this._puuidNames.set(p.puuid, p.gameName); });
+    this._csCells = (sess.myTeam || []).slice();
     const local = sess.localPlayerCellId;
     const groups = Array.isArray(sess.actions) ? sess.actions : [];
     const flat = groups.flat();
@@ -846,12 +847,19 @@ class Engine extends EventEmitter {
     // Nunca se marca mientras haya baneos pendientes ni durante tu turno de ban: evita que se banee tu propio pick.
     if (!cs.bansDone || (cs.myTurn && cs.myTurn.type === 'ban')) return;
     if (!cs.pickable.length) return; // todavía no hay lista, reintenta luego
-    this._prepickDone = true;
     if (cs.pickable.includes(want)) {
+      this._prepickDone = true;
       await this.lcu.request('PATCH', `/lol-champ-select/v1/session/actions/${cs.myPickAction.id}`, { championId: want });
-    } else {
-      this._alert('prepickFailed', { championId: want });
+      return;
     }
+    // Solo se avisa si de verdad está baneado; si no, la lista del cliente puede estar incompleta todavía y se reintenta.
+    const banned = [...((cs.bans && cs.bans.my) || []), ...((cs.bans && cs.bans.their) || [])].map(Number);
+    if (cs.hasBans && !banned.includes(Number(want))) {
+      this._prepickTries = (this._prepickTries || 0) + 1;
+      if (this._prepickTries < 6) return;
+    }
+    this._prepickDone = true;
+    this._alert('prepickFailed', { championId: want });
   }
 
   async hoverChampion(championId) {
@@ -1288,6 +1296,7 @@ class Engine extends EventEmitter {
       useRunesFail: d.useRunesFail || null,
       chatConvs: d.chatConvs || null,
       chatSample: d.chatSample || null,
+      chatCells: d.chatCells || null,
       friendsSample: d.friendsSample || null,
       inviteTry: d.inviteTry || null,
       cosmeticsTrail: d.cosmeticsTrail || null,
@@ -1356,6 +1365,13 @@ class Engine extends EventEmitter {
     return name;
   }
 
+  // Busca la celda del champ select de quien escribió (por varios identificadores; en ranked el cliente usa los "ofuscados").
+  _cellOf(m) {
+    return (this._csCells || []).find((c) =>
+      (m.fromPuuid && c.puuid === m.fromPuuid) || (m.fromSummonerId && c.summonerId === m.fromSummonerId) ||
+      (m.fromObfuscatedPuuid && c.obfuscatedPuuid === m.fromObfuscatedPuuid) || (m.fromObfuscatedSummonerId && c.obfuscatedSummonerId === m.fromObfuscatedSummonerId)) || null;
+  }
+
   async _chatPoll() {
     if (!['Lobby', 'Matchmaking', 'ReadyCheck', 'ChampSelect'].includes(this.s.phase)) return;
     if (!this._chatId) await this._findChat();
@@ -1363,7 +1379,7 @@ class Engine extends EventEmitter {
     const r = await this.lcu.request('GET', `/lol-chat/v1/conversations/${encodeURIComponent(this._chatId)}/messages`);
     if (r.status !== 200 || !Array.isArray(r.data)) return;
     const msgs = r.data.filter((m) => (m.type === 'chat' || m.type === 'groupchat') && m.body).slice(-50);
-    if (this._diag) this._diag.chatSample = r.data.slice(-3);
+    if (this._diag) { this._diag.chatSample = r.data.slice(-3); this._diag.chatCells = (this._csCells || []).map((c) => ({ cellId: c.cellId, vis: c.nameVisibilityType, alias: c.playerAlias, internal: c.internalName, hasPuuid: !!c.puuid, obf: !!(c.obfuscatedPuuid || c.obfuscatedSummonerId), champ: c.championId })); }
     // Chat de la sala: los nombres salen de los participantes de la conversación, de la sala o del perfil de chat.
     const pn = new Map();
     if (this.s.phase !== 'ChampSelect') {
@@ -1384,14 +1400,18 @@ class Engine extends EventEmitter {
     const out = [];
     for (const m of msgs) {
       const me = this._chatMe || {};
-      const mine = (this._mySummonerId && m.fromSummonerId === this._mySummonerId) || (!!this._myPuuid && m.fromPuuid === this._myPuuid) || (!!me.id && m.fromId === me.id) || (!!me.pid && m.fromPid === me.pid);
+      const cell = this.s.phase === 'ChampSelect' ? this._cellOf(m) : null;
+      const mine = (cell && this.s.champSelect && cell.cellId === this.s.champSelect.localCell) || (this._mySummonerId && m.fromSummonerId === this._mySummonerId) || (!!this._myPuuid && m.fromPuuid === this._myPuuid) || (!!me.id && m.fromId === me.id) || (!!me.pid && m.fromPid === me.pid);
       // En ranked el propio cliente oculta los nombres del equipo: igual acá, se numeran como "Aliado N". En el resto se ven como en el cliente.
       const inParty = !!this._party && ((m.fromPuuid && this._party.puuids.has(m.fromPuuid)) || (m.fromSummonerId && this._party.sids.has(m.fromSummonerId)));
       const hide = !inParty && this.s.phase === 'ChampSelect' && [420, 440].includes(this._csQueue || this.s.lobbyQueueId);
-      const who = m.fromPuuid || m.fromSummonerId || m.fromId || m.fromPid;
+      const who = m.fromPuuid || m.fromObfuscatedPuuid || m.fromSummonerId || m.fromObfuscatedSummonerId || m.fromId || m.fromPid;
       if (!this._allyNums) this._allyNums = new Map();
-      if (!mine && !inParty && !this._allyNums.has(who)) this._allyNums.set(who, this._allyNums.size + 1);
+      const alias = cell && !mine && hide ? (cell.playerAlias || cell.internalName || '') : '';
+      if (!mine && !inParty && !alias && !this._allyNums.has(who)) this._allyNums.set(who, this._allyNums.size + 1);
       let name = '';
+      // En ranked el cliente muestra un apodo anónimo (playerAlias): se usa ese mismo en vez de "Aliado N".
+      if (alias) name = alias;
       if (mine || !hide) {
         name = (m.fromPuuid && this._puuidNames && this._puuidNames.get(m.fromPuuid)) || (m.fromSummonerId && (this._lobbyNames && this._lobbyNames.get(m.fromSummonerId))) || pn.get(String(m.fromPid)) || pn.get(String(m.fromId)) || pn.get(String(m.fromSummonerId)) || '';
         if (!name && mine && me.name) name = me.name;
@@ -1400,6 +1420,8 @@ class Engine extends EventEmitter {
       }
       out.push({
         id: m.id,
+        champId: cell ? (cell.championId || cell.championPickIntent || 0) : 0,
+        pos: cell ? (cell.assignedPosition || '') : '',
         allyN: mine || inParty ? 0 : this._allyNums.get(who),
         name,
         body: String(m.body).slice(0, 500),
