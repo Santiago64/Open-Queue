@@ -432,6 +432,52 @@ class Engine extends EventEmitter {
     this._emitState();
   }
 
+  // ---------- invitar amigos a la sala ----------
+  async friends() {
+    const r = await this.lcu.request('GET', '/lol-chat/v1/friends');
+    if (r.status !== 200 || !Array.isArray(r.data)) return { ok: false, error: 'nofriends' };
+    if (this._diag) this._diag.friendsSample = r.data.slice(0, 3);
+    const QT = { RANKED_SOLO_5x5: 'Ranked Solo/Duo', RANKED_FLEX_SR: 'Ranked Flex', NORMAL: 'Normal', NORMAL_DRAFT: 'Normal', ARAM: 'ARAM', KIWI: 'ARAM Mayhem', CHERRY: 'Arena', BOT: 'Bots', SWIFTPLAY: 'Swiftplay' };
+    const label = (f) => {
+      const gs = f.lol && f.lol.gameStatus;
+      if (f.availability === 'mobile') return 'mobile';
+      if (gs === 'inGame') return 'ingame';
+      if (gs && gs !== 'outOfGame' && gs !== 'hosting_Unknown') return 'busy';
+      if (f.availability === 'away') return 'away';
+      if (f.availability === 'dnd') return 'dnd';
+      return 'online';
+    };
+    const list = r.data
+      .filter((f) => f && f.summonerId && f.availability && f.availability !== 'offline')
+      .filter((f) => !f.product || f.product === 'league_of_legends')
+      .map((f) => {
+        const lol = f.lol || {};
+        const qt = QT[lol.gameQueueType] || QT[lol.gameMode] || lol.gameQueueType || '';
+        return {
+          id: f.summonerId,
+          name: f.gameName ? `${f.gameName}${f.gameTag ? '#' + f.gameTag : ''}` : (f.name || ''),
+          icon: f.icon || f.profileIconId || 0,
+          status: label(f),
+          gs: lol.gameStatus || '',
+          queue: qt,
+          since: Number(lol.timeStamp) || 0,
+        };
+      })
+      .filter((f) => f.name);
+    const rank = { online: 0, away: 1, busy: 2, dnd: 3, ingame: 4, mobile: 5 };
+    list.sort((a, b) => rank[a.status] - rank[b.status] || a.name.localeCompare(b.name));
+    return { ok: true, friends: list };
+  }
+
+  async inviteFriend(summonerId) {
+    summonerId = Number(summonerId);
+    if (!summonerId) return { ok: false, error: 'bad' };
+    if (this.s.phase !== 'Lobby') return { ok: false, error: 'notLobby' };
+    const r = await this.lcu.request('POST', '/lol-lobby/v2/lobby/invitations', [{ toSummonerId: summonerId }]);
+    if (this._diag) this._diag.inviteTry = { status: r.status, data: r.data };
+    return r.status >= 200 && r.status < 300 ? { ok: true } : { ok: false, error: 'inviteFail' };
+  }
+
   // ---------- invitaciones a sala ----------
   setAutoInvite(enabled) {
     this.settings.autoInvite.enabled = !!enabled;
@@ -494,6 +540,23 @@ class Engine extends EventEmitter {
     if (this.s.lobby && this.s.lobby.showPositionSelector) await this._applyRoles(); // rol principal/secundario antes de buscar
     const r = await this.lcu.request('POST', '/lol-lobby/v2/lobby/matchmaking/search');
     return { ok: r.status >= 200 && r.status < 300, error: r.status >= 300 ? 'search' : undefined };
+  }
+
+  // Crea la sala SIN buscar partida (para invitar amigos primero).
+  async createLobby(queueId) {
+    queueId = Number(queueId);
+    if (!queueId) return { ok: false, error: 'queue' };
+    if (this.s.phase === 'Lobby') {
+      if (this.s.lobbyQueueId !== queueId) return this._changeLobbyQueue(queueId);
+      return { ok: true };
+    }
+    if (this.s.phase !== 'None') return { ok: false, error: 'phase' };
+    const c = await this.lcu.request('POST', '/lol-lobby/v2/lobby', { queueId });
+    if (c.status < 200 || c.status >= 300) return { ok: false, error: 'lobby' };
+    await this._fetchLobby();
+    if (this.s.lobby && this.s.lobby.showPositionSelector) await this._applyRoles();
+    this._emitState();
+    return { ok: true };
   }
 
   // Cambia el modo de la sala SIN salirte: si hay gente en la sala nunca se cierra la sala.
@@ -1225,6 +1288,8 @@ class Engine extends EventEmitter {
       useRunesFail: d.useRunesFail || null,
       chatConvs: d.chatConvs || null,
       chatSample: d.chatSample || null,
+      friendsSample: d.friendsSample || null,
+      inviteTry: d.inviteTry || null,
       cosmeticsTrail: d.cosmeticsTrail || null,
       cosmeticsSet: d.cosmeticsSet || null,
       chatParticipants: d.chatParticipants || null,
