@@ -10,11 +10,11 @@ Free, open-source companion for the League of Legends client. Control your own c
 
 **Real match / Partida real**
 
-VIDEO_PARTIDA_URL
+[https://youtu.be/WY_2kIYpCiA](https://youtu.be/WY_2kIYpCiA)
 
 **Practice Tool (all features) / Herramienta de práctica**
 
-VIDEO_PRACTICE_URL
+[VIDEO_PRACTICE_URL](https://youtu.be/uzNA9uWtmXg)
 
 ## Features
 - Pair with a QR code or a 6-digit code. Accept/decline the match from your phone, or **auto-accept with a configurable delay (0-8 s)** that runs on the PC even if the phone disconnects.
