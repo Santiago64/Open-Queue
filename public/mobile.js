@@ -305,6 +305,7 @@
       <select id="queueSel">${queueOptions()}</select>
       <div id="rolesBox"></div>
       <button class="btn primary block" style="margin-top:12px" data-act="search">${t('search')}</button>
+      <div id="createBox"></div>
       <div id="leaveBox"></div></div>`;
   }
 
@@ -324,6 +325,9 @@
       lastLobbyQ = lq;
       if (lq && state.queues.some((q) => q.id === lq)) { sel.value = String(lq); rememberQueue(lq); }
     }
+    const cbox = $('createBox');
+    const wantCreate = p === 'None';
+    if (!!cbox.firstChild !== wantCreate) cbox.innerHTML = wantCreate ? `<button class="btn block dashed" style="margin-top:8px" data-act="createLobby">${t('createLobby')}</button><p class="note" style="margin-top:6px">${t('createLobbyHelp')}</p>` : '';
     const leave = $('leaveBox');
     const wantLeave = p === 'Lobby';
     if (!!leave.firstChild !== wantLeave) leave.innerHTML = wantLeave ? `<button class="btn block dashed" style="margin-top:8px" data-act="openFriends">+ ${t('inviteFriends')}</button><button class="btn block" style="margin-top:8px" data-act="leave">${t('leaveLobby')}</button>` : '';
@@ -1009,6 +1013,7 @@
       case 'search': { const q = $('queueSel') ? Number($('queueSel').value) : 0; if (q) rememberQueue(q); cmd('search', { queueId: q }); break; }
       case 'cancel': cmd('cancelSearch'); break;
       case 'leave': cmd('leaveLobby'); break;
+      case 'createLobby': cmd('createLobby', { queueId: Number($('queueSel').value) }); break;
       case 'accept': cmd('accept'); break;
       case 'decline': cmd('decline'); break;
       case 'openChamp': openChampSheet(el.getAttribute('data-mode')); break;
