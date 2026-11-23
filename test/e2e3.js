@@ -227,6 +227,21 @@ async function waitFor(fn, label, ms = 6000) {
   mock.setPhase('None'); await sleep(300);
   ok('ban preparado: se banea solo en tu turno de ban');
 
+  // ---- Chat en ranked: apodo del cliente + campeón de quien habla
+  mock.st.chat = [];
+  mock.startChampSelect();
+  mock.st.session.queueId = 420;
+  Object.assign(mock.st.session.myTeam[1], { nameVisibilityType: 'HIDDEN', playerAlias: 'Escarabajo Rocoso', gameName: '', obfuscatedSummonerId: 99123, summonerId: 0, puuid: '', championId: 103, assignedPosition: 'jungle' });
+  mock.emit('/lol-champ-select/v1/session', mock.st.session);
+  await waitFor(() => state.phase === 'ChampSelect' && state.champSelect, 'champ select ranked');
+  await sleep(300);
+  mock.addRawChat({ body: 'gank mid', type: 'chat', fromObfuscatedSummonerId: 99123, fromSummonerId: 0, fromPuuid: '', fromId: 'o1', fromPid: 'o1' });
+  await waitFor(() => state.chat.some((c) => c.body === 'gank mid'), 'mensaje ranked');
+  const rk = state.chat.find((c) => c.body === 'gank mid');
+  assert.strictEqual(rk.name, 'Escarabajo Rocoso'); assert.strictEqual(rk.champId, 103); assert.strictEqual(rk.pos, 'jungle');
+  mock.setPhase('None'); await sleep(300);
+  ok('chat en ranked: apodo del cliente (no "Aliado N") y campeón/línea de quien habla');
+
   // ---- Crear sala sin buscar
   assert.strictEqual(state.phase, 'None');
   const nSearch = mock.calls.filter((c) => c.url === '/lol-lobby/v2/lobby/matchmaking/search').length;
