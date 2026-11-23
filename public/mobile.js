@@ -899,6 +899,23 @@
     FR.loading = false;
     if (r && r.ok) FR.list = r.friends;
     renderFriends();
+    clearInterval(FR.timer);
+    let n = 0;
+    FR.timer = setInterval(async () => {
+      const open = !$('sheetList').classList.contains('hidden') && $('slTitle').textContent === t('inviteFriends');
+      if (!open) { clearInterval(FR.timer); return; }
+      n += 1;
+      if (n % 10 === 0) { // cada 10 s se vuelve a pedir la lista (estados, quién entró o salió de partida)
+        const nr = await request('friends', {});
+        if (nr && nr.ok) { FR.list = nr.friends; if (document.activeElement !== $('frQ')) renderFriends(); }
+      }
+      // cada segundo avanza el reloj de los que están en partida, sin redibujar la lista
+      document.querySelectorAll('.frrow[data-fid]').forEach((row) => {
+        const f = (FR.list || []).find((x) => String(x.id) === row.getAttribute('data-fid'));
+        const el = row.querySelector('.frtext');
+        if (f && el) el.textContent = friendText(f);
+      });
+    }, 1000);
   }
   function friendText(f) {
     const mins = f.since ? Math.max(0, Math.floor((Date.now() - f.since) / 1000)) : 0;
@@ -923,7 +940,7 @@
     if (!FR.list) h += `<p class="dim">${FR.loading ? t('runesLoading') : t('errGeneric')}</p>`;
     else {
       const items = FR.list.filter((f) => !q || f.name.toLowerCase().includes(q));
-      h += items.length ? `<div class="frlist">${items.map((f) => `<div class="frrow ${f.status === 'mobile' ? 'off' : ''}" ${f.status === 'mobile' ? '' : `data-act="invFriend" data-k="${f.id}"`}>${friendAvatar(f)}<div class="frinfo"><div class="frname">${esc(f.name)}</div><div class="frtext">${esc(friendText(f))}</div></div>${f.status === 'mobile' ? '' : `<b class="frbtn">${FR.sent.has(f.id) ? t('frSent') : t('frInvite')}</b>`}</div>`).join('')}</div>` : `<p class="dim">${t('frNone')}</p>`;
+      h += items.length ? `<div class="frlist">${items.map((f) => `<div class="frrow ${f.status === 'mobile' ? 'off' : ''}" data-fid="${f.id}" ${f.status === 'mobile' ? '' : `data-act="invFriend" data-k="${f.id}"`}>${friendAvatar(f)}<div class="frinfo"><div class="frname">${esc(f.name)}</div><div class="frtext">${esc(friendText(f))}</div></div>${f.status === 'mobile' ? '' : `<b class="frbtn">${FR.sent.has(f.id) ? t('frSent') : t('frInvite')}</b>`}</div>`).join('')}</div>` : `<p class="dim">${t('frNone')}</p>`;
     }
     $('slBody').innerHTML = h;
     const inp = $('frQ'); if (inp) inp.oninput = (e) => { FR.q = e.target.value; const pos = e.target.selectionStart; renderFriends(); const n = $('frQ'); if (n) { n.focus(); n.setSelectionRange(pos, pos); } };
