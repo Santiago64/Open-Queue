@@ -149,3 +149,6 @@ body.stream .secret.peek { filter: none; }
 .frname{font-weight:600;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .frtext{font-size:12px;opacity:.65}
 .frbtn{border:1px solid #fff;padding:4px 10px;font-size:12px}
+
+.chwho{display:inline-flex;align-items:center;gap:4px;margin:0 6px;font-size:11px;opacity:.7;vertical-align:middle}
+.chwho .portrait{width:18px;height:18px;border-radius:50%;min-width:18px}

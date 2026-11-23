@@ -397,9 +397,16 @@
     if (!avail.some(([k]) => k === swapMode)) swapMode = null;
     const ong = cs.ongoingSwap && cs.ongoingSwap.mine
       ? `<p class="note" style="margin:8px 0 0">${esc(cs.ongoingSwap.from)} ⇄ ${esc(cs.ongoingSwap.to)} · ${esc(t('swapSt_' + cs.ongoingSwap.state) === 'swapSt_' + cs.ongoingSwap.state ? cs.ongoingSwap.state : t('swapSt_' + cs.ongoingSwap.state))}</p>` : '';
+    // Pedidos que ya enviaste: siempre se pueden cancelar desde acá, aunque estés en otro modo de cambio.
+    const sent = [];
+    SWAP_KINDS.forEach(([k, lbl]) => ((cs.swapOpts || {})[k] || []).filter((o) => o.sent).forEach((o) => {
+      const pl = (cs.myTeam || []).find((x) => x.cellId === o.cellId) || {};
+      const key = pl.championId || pl.intent;
+      sent.push(`<div class="row" style="gap:8px;margin-top:8px;align-items:center">${key ? champImg(key) : ''}<span style="flex:1;min-width:0"><b>${t(lbl)}</b><br><small class="dim">${esc(key ? champName(key) : (POS[OQ.lang][pl.position] || '#' + (o.cellId + 1)))}</small></span><button class="btn small" data-act="swapCancel" data-kind="${k}" data-id="${o.id}">${t('cancelReq')}</button></div>`);
+    }));
     return `<div class="card"><div class="row wrap" style="gap:8px">${avail.map(([k, lbl]) =>
       `<button class="btn small ${swapMode === k ? 'primary' : ''}" style="flex:1" data-act="swapMode" data-kind="${k}">${t(lbl)}</button>`).join('')}</div>
-      ${swapMode ? `<p class="note" style="margin:8px 0 0">${t('swapPickMate')}</p>` : ''}${ong}</div>`;
+      ${swapMode ? `<p class="note" style="margin:8px 0 0">${t('swapPickMate')}</p>` : ''}${sent.join('')}${ong}</div>`;
   }
 
   function slotHtml(pl, ally, cs) {
@@ -468,7 +475,6 @@
     h += `<div class="card"><div class="row wrap" style="gap:8px">
       <button class="pill" data-act="openSpell" data-slot="1">${spellImg(me.spell1Id)}<span><small>${t('spells')} 1</small>${esc((S.spellByKey[me.spell1Id] || {}).name || me.spell1Id || '—')}</span></button>
       <button class="pill" data-act="openSpell" data-slot="2">${spellImg(me.spell2Id)}<span><small>${t('spells')} 2</small>${esc((S.spellByKey[me.spell2Id] || {}).name || me.spell2Id || '—')}</span></button>
-      <button class="pill" data-act="openCosmetics" style="flex:1;min-width:140px"><span><small>${t('cosmetics')}</small>${t('coOpen')}</span></button>
       ${noRunes ? '' : `<button class="pill" data-act="openRune" style="flex:1;min-width:140px"><span><small>${t('runes')}</small>${esc(curRune)}</span></button>`}
       ${(me.championId || me.intent) ? `<button class="pill" data-act="openSkins" style="flex:1;min-width:140px"><span><small>${t('skins')}</small>${esc(skinLabel(me))}</span></button>` : ''}</div></div>`;
     h += `<button class="btn block danger" style="margin-top:4px" data-act="dodge">${t('dodge')}</button><p class="note" style="margin:6px 0 0">${t('dodgeHelp')}</p>`;
@@ -562,7 +568,11 @@
     if (!show) return;
     const box = $('chatMsgs');
     const atBottom = box.scrollHeight - box.scrollTop - box.clientHeight < 40;
-    const chatHtml = state.chat.map((m) => `<div class="m ${m.mine ? 'mine' : ''}"><b>${esc(m.name || (t('ally') + ' ' + m.allyN))}</b>${esc(m.body)}</div>`).join('');
+    const chatHtml = state.chat.map((m) => {
+      const pos = m.pos ? (POS[OQ.lang][m.pos.toLowerCase()] || '') : '';
+      const who = m.champId ? `<span class="chwho">${champImg(m.champId)}<span>${esc(champName(m.champId))}${pos ? ' · ' + esc(pos) : ''}</span></span>` : '';
+      return `<div class="m ${m.mine ? 'mine' : ''}"><b>${esc(m.name || (t('ally') + ' ' + m.allyN))}</b>${who}${esc(m.body)}</div>`;
+    }).join('');
     if (box._h !== chatHtml) { box.innerHTML = chatHtml; box._h = chatHtml; if (atBottom) box.scrollTop = box.scrollHeight; }
   }
 
