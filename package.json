@@ -1,6 +1,6 @@
 {
   "name": "open-queue",
-  "version": "0.8.6",
+  "version": "0.8.7",
   "description": "Open Queue - control League of Legends (accept match, queue, champ select) from your phone. Free and open source.",
   "main": "main.js",
   "scripts": {

@@ -1,3 +1,5 @@
+<p align="center"><img src="public/icon.png" width="96" alt="Open Queue"></p>
+
 # Open Queue
 
 **English** · [Español](#español)
@@ -10,11 +12,11 @@ Free, open-source companion for the League of Legends client. Control your own c
 
 **Real match / Partida real**
 
-[https://youtu.be/WY_2kIYpCiA](https://youtu.be/WY_2kIYpCiA)
+VIDEO_PARTIDA_URL
 
 **Practice Tool (all features) / Herramienta de práctica**
 
-[VIDEO_PRACTICE_URL](https://youtu.be/uzNA9uWtmXg)
+VIDEO_PRACTICE_URL
 
 ## Features
 - Pair with a QR code or a 6-digit code. Accept/decline the match from your phone, or **auto-accept with a configurable delay (0-8 s)** that runs on the PC even if the phone disconnects.

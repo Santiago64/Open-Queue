@@ -31,6 +31,7 @@ if (!gotLock) {
       minHeight: 560,
       backgroundColor: '#0b0b0d',
       title: 'Open Queue',
+      icon: path.join(__dirname, 'public', 'icon.ico'),
       autoHideMenuBar: true,
       webPreferences: { contextIsolation: true, nodeIntegration: false },
     });

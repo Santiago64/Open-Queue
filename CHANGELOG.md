@@ -88,3 +88,6 @@
 
 ##  v0.8.6
 - Pick preparado: ya no muestra el aviso falso "baneado" al entrar al champ select. Solo avisa si el campeón figura de verdad en los baneos; si la lista del cliente aún está incompleta, reintenta.
+
+##  v0.8.7
+- Ícono propio de la app (ventana, barra de tareas, pestaña del navegador, pantalla de inicio del celu y README). Es provisorio y se puede cambiar reemplazando `public/icon.png` y `public/icon.ico`.
