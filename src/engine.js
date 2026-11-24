@@ -34,6 +34,27 @@ const NOISY_URIS = ['/lol-chat', '/riotclient', '/lol-patch', '/data-store', '/l
   '/lol-collections', '/lol-catalog', '/lol-premade-voice', '/lol-npe', '/lol-esport', '/lol-leaver', '/lol-statstones',
   '/lol-career', '/lol-account', '/lol-lcds', '/lol-player', '/lol-event', '/lol-pft', '/lol-yourshop', '/lol-vanguard'];
 
+const AUTO_PICK_MARGIN_MS = 700; // pick automático: cuánto antes del 0 se manda
+
+// Línea del champ select ('top', 'jungle', 'middle', 'bottom', 'utility').
+function normPos(p) {
+  const x = String(p || '').toLowerCase();
+  if (x === 'mid') return 'middle';
+  if (x === 'bot' || x === 'adc') return 'bottom';
+  if (x === 'support' || x === 'sup') return 'utility';
+  return ['top', 'jungle', 'middle', 'bottom', 'utility'].includes(x) ? x : '';
+}
+// Línea de una partida del historial (lane + role del cliente).
+function histPos(tl) {
+  const lane = String(tl.lane || '').toUpperCase();
+  const role = String(tl.role || '').toUpperCase();
+  if (lane === 'TOP') return 'top';
+  if (lane === 'JUNGLE') return 'jungle';
+  if (lane === 'MIDDLE' || lane === 'MID') return 'middle';
+  if (lane === 'BOTTOM' || lane === 'BOT') return role.includes('SUPPORT') ? 'utility' : 'bottom';
+  return '';
+}
+
 function lcuMessage(r) {
   const d = r && r.data;
   if (!d) return '';
@@ -339,6 +360,8 @@ class Engine extends EventEmitter {
     if (!chatWanted(p) && chatWanted(prev)) this._stopChat();
     if (p === 'ChampSelect' && prev !== 'ChampSelect') {
       this._prepickDone = false; this._prepickTries = 0;
+      this._autoPickTurn = null;
+      this._loadHistory();
       this._lastMyTurnId = null;
       this._userBanChoice = null;
       this._banGuardId = null;
@@ -352,6 +375,7 @@ class Engine extends EventEmitter {
       });
     }
     if (prev === 'ChampSelect' && p !== 'ChampSelect') {
+      clearTimeout(this._autoPickTimer);
       this.s.champSelect = null;
       if (chatWanted(p)) this._startChat(); else this._stopChat();
     }
@@ -678,6 +702,9 @@ class Engine extends EventEmitter {
     const opts = (arr) => (Array.isArray(arr) ? arr : []).filter((x) => x && (x.state === 'AVAILABLE' || x.state === 'SENT')).map((x) => ({ id: x.id, cellId: x.cellId, sent: x.state === 'SENT' }));
     const swapOpts = { pickOrder: opts(sess.pickOrderSwaps), position: opts(sess.positionSwaps), champion: opts(sess.trades || sess.championSwaps) };
     const bansDone = bans.every((o) => o.completed);
+    // Baneados: los de la lista oficial y también los baneos ya confirmados (la lista a veces llega tarde).
+    const bannedSet = new Set([...((sess.bans && sess.bans.myTeamBans) || []), ...((sess.bans && sess.bans.theirTeamBans) || []),
+      ...bans.filter((o) => o.completed && o.championId > 0).map((o) => o.championId)].map(Number).filter((x) => x > 0));
     this.s.champSelect = {
       queueId: this._csQueue || null,
       subsetPicks: !!sess.allowSubsetChampionPicks, // ARAM Mayhem (también en partidas personalizadas)
@@ -702,6 +729,7 @@ class Engine extends EventEmitter {
         my: (sess.bans && sess.bans.myTeamBans) || [],
         their: (sess.bans && sess.bans.theirTeamBans) || [],
       } : { my: [], their: [] },
+      banned: [...bannedSet],
       myTurn: myActive ? { id: myActive.id, type: myActive.type, championId: myActive.championId || 0 } : null,
       myPickAction: myPick ? { id: myPick.id, championId: myPick.championId || 0, completed: !!myPick.completed } : null,
       order,
@@ -710,7 +738,9 @@ class Engine extends EventEmitter {
       ongoingSwap: this._ongoing || null,
       pickable: prevLists.pickable || [],
       bannable: prevLists.bannable || [],
+      recommend: this._recommendFor((sess.myTeam || []).find((p) => p.cellId === local)),
     };
+    this._scheduleAutoPick();
 
     const turnId = myActive ? myActive.id : null;
     if (turnId !== null && turnId !== this._lastMyTurnId) this._alert('yourTurn', { type: myActive.type });
@@ -872,6 +902,7 @@ class Engine extends EventEmitter {
       if (!cs.bansDone) return { ok: false, error: 'bansfirst' }; // no se puede marcar un pick mientras se banea
       action = cs.myPickAction;
     }
+    if (action.type === 'pick' && (cs.banned || []).includes(championId)) return { ok: false, error: 'banned' };
     if (action.type === 'ban') this._userBanChoice = championId;
     const r = await this.lcu.request('PATCH', `/lol-champ-select/v1/session/actions/${action.id}`, { championId });
     return { ok: r.status >= 200 && r.status < 300, error: r.status >= 300 ? 'rejected' : undefined };
@@ -883,6 +914,7 @@ class Engine extends EventEmitter {
     const id = cs.myTurn.id;
     const champ = Number(championId);
     if (!champ) return { ok: false, error: 'nochamp' }; // nunca se usa un campeón que no elegiste vos en esta pantalla
+    if (cs.myTurn.type === 'pick' && (cs.banned || []).includes(champ)) return { ok: false, error: 'banned' };
     if (cs.myTurn.type === 'ban') this._userBanChoice = champ;
     const r = await this.lcu.request('PATCH', `/lol-champ-select/v1/session/actions/${id}`, { championId: champ, completed: true });
     return { ok: r.status >= 200 && r.status < 300 };
@@ -907,6 +939,138 @@ class Engine extends EventEmitter {
     this.settings.prePick.championId = championId ? Number(championId) : null;
     this.store.save();
     this._emitState();
+  }
+
+  // ---------- favoritos y pick automático ----------
+  setFavorites(patch) {
+    const f = this.settings.favorites || (this.settings.favorites = { ids: [], autoPick: false, useHistory: false });
+    patch = patch || {};
+    if (Array.isArray(patch.ids)) f.ids = [...new Set(patch.ids.map(Number).filter((x) => x > 0))].slice(0, 3);
+    if (patch.autoPick !== undefined) f.autoPick = !!patch.autoPick;
+    if (patch.useHistory !== undefined) f.useHistory = !!patch.useHistory;
+    this.settings.favorites = f;
+    this.store.save();
+    if (f.useHistory && this.s.phase === 'ChampSelect') this._loadHistory();
+    if (this.s.champSelect) {
+      const me = (this.s.champSelect.myTeam || []).find((p) => p.isMe);
+      this.s.champSelect.recommend = this._recommendFor(me ? { assignedPosition: me.position } : null);
+      this._scheduleAutoPick();
+    }
+    this._emitState();
+  }
+
+  // Lee tus últimas partidas (y tu maestría) para saber con qué campeones te va mejor en cada línea.
+  async _loadHistory() {
+    const f = this.settings.favorites || {};
+    if (!f.useHistory) return;
+    if (this._hist && Date.now() - this._hist.at < 10 * 60 * 1000) return;
+    if (this._histBusy) return;
+    this._histBusy = true;
+    try {
+      const stats = new Map(); // championId -> { all: {g, w}, top: {g, w}, ... }
+      const add = (champ, pos, win) => {
+        if (!champ) return;
+        if (!stats.has(champ)) stats.set(champ, { all: { g: 0, w: 0 } });
+        const e = stats.get(champ);
+        e.all.g++; if (win) e.all.w++;
+        if (pos) { e[pos] = e[pos] || { g: 0, w: 0 }; e[pos].g++; if (win) e[pos].w++; }
+      };
+      let games = 0;
+      for (let beg = 0; beg < 100; beg += 20) {
+        const r = await this.lcu.request('GET', `/lol-match-history/v1/products/lol/current-summoner/matches?begIndex=${beg}&endIndex=${beg + 20}`);
+        const list = r.status === 200 && r.data && r.data.games && Array.isArray(r.data.games.games) ? r.data.games.games : null;
+        if (!list || !list.length) break;
+        for (const g of list) {
+          if (!g || (g.gameMode && g.gameMode !== 'CLASSIC')) continue; // solo la Grieta (las líneas no aplican en ARAM)
+          const me = (g.participants || [])[0];
+          if (!me) continue;
+          add(Number(me.championId), histPos(me.timeline || {}), !!(me.stats && me.stats.win));
+          games++;
+        }
+        if (list.length < 20) break;
+      }
+      const mastery = new Map();
+      const m = await this.lcu.request('GET', '/lol-champion-mastery/v1/local-player/champion-mastery');
+      if (m.status === 200 && Array.isArray(m.data)) m.data.forEach((x) => { if (x && x.championId) mastery.set(Number(x.championId), Number(x.championPoints) || 0); });
+      this._hist = { at: Date.now(), stats, mastery, games };
+      if (this._diag) this._diag.history = { games, champs: stats.size, mastery: mastery.size };
+      if (this.s.champSelect) {
+        const me = (this.s.champSelect.myTeam || []).find((p) => p.isMe);
+        this.s.champSelect.recommend = this._recommendFor(me ? { assignedPosition: me.position } : null);
+        this._emitState();
+      }
+    } catch (_) {
+    } finally { this._histBusy = false; }
+  }
+
+  // Puntaje de un campeón tuyo para una línea: rinde más ganar seguido y tener varias partidas en esa línea.
+  _champScore(champ, pos) {
+    const h = this._hist;
+    if (!h) return 0;
+    const e = h.stats.get(Number(champ));
+    const p = e && pos && e[pos];
+    const a = e && e.all;
+    let sc = 0;
+    if (p && p.g) sc += ((p.w + 2) / (p.g + 4)) + Math.min(p.g, 15) * 0.03 + 0.5; // jugado en esta línea: va primero
+    else if (a && a.g) sc += ((a.w + 2) / (a.g + 4)) * 0.6 + Math.min(a.g, 15) * 0.01;
+    const mp = h.mastery.get(Number(champ)) || 0;
+    sc += Math.min(mp, 300000) / 300000 * 0.15;
+    return sc;
+  }
+
+  _recommendFor(cell) {
+    const f = this.settings.favorites || {};
+    if (!f.useHistory || !this._hist) return [];
+    const pos = normPos(cell && cell.assignedPosition);
+    const owned = new Set(this.s.owned || []);
+    const cands = [...new Set([...this._hist.stats.keys(), ...this._hist.mastery.keys()])].filter((c) => !owned.size || owned.has(c));
+    return cands.map((c) => {
+      const e = this._hist.stats.get(c) || { all: { g: 0, w: 0 } };
+      const p = (pos && e[pos]) || null;
+      return { championId: c, score: this._champScore(c, pos), games: p ? p.g : 0, wins: p ? p.w : 0, gamesAll: e.all.g, winsAll: e.all.w };
+    }).filter((x) => x.score > 0).sort((a, b) => b.score - a.score).slice(0, 5);
+  }
+
+  // Orden de campeones a probar si se te acaba el tiempo: lo que tenías marcado, tus favoritos y, si lo activaste, tus mejores según tus partidas.
+  _autoPickCandidates() {
+    const cs = this.s.champSelect;
+    const f = this.settings.favorites || {};
+    const me = (cs.myTeam || []).find((p) => p.isMe) || {};
+    const pos = normPos(me.position);
+    const out = [];
+    if (cs.myTurn && cs.myTurn.championId) out.push(cs.myTurn.championId);
+    let favs = (f.ids || []).slice();
+    if (f.useHistory && this._hist) favs = favs.map((c, i) => ({ c, i, s: this._champScore(c, pos) })).sort((a, b) => (b.s - a.s) || (a.i - b.i)).map((x) => x.c);
+    out.push(...favs);
+    if (f.useHistory) out.push(...(cs.recommend || []).map((x) => x.championId));
+    return [...new Set(out.map(Number).filter(Boolean))];
+  }
+
+  _scheduleAutoPick() {
+    clearTimeout(this._autoPickTimer);
+    const cs = this.s.champSelect;
+    const f = this.settings.favorites || {};
+    if (!cs || !f.autoPick || !cs.myTurn || cs.myTurn.type !== 'pick' || cs.benchEnabled || cs.isInfinite || cs.timeLeftMs == null) return;
+    if (this._autoPickTurn === cs.myTurn.id) return;
+    const turnId = cs.myTurn.id;
+    // Se dispara en el último segundo (cuando el reloj llega a 0), con un pequeño margen para que el cliente lo reciba a tiempo.
+    const wait = Math.max(0, cs.timeLeftMs - (cs.at ? Date.now() - cs.at : 0) - AUTO_PICK_MARGIN_MS);
+    this._autoPickTimer = setTimeout(() => this._autoPick(turnId), wait);
+  }
+
+  async _autoPick(turnId) {
+    const cs = this.s.champSelect;
+    if (!cs || !cs.myTurn || cs.myTurn.id !== turnId || cs.myTurn.type !== 'pick' || this._autoPickTurn === turnId) return;
+    this._autoPickTurn = turnId;
+    const p = await this.lcu.request('GET', '/lol-champ-select/v1/pickable-champion-ids');
+    const pickable = new Set(Array.isArray(p.data) && p.data.length ? p.data.map(Number) : (cs.pickable || []).map(Number));
+    const taken = new Set([...(cs.myTeam || []), ...(cs.theirTeam || [])].filter((x) => !x.isMe && x.championId).map((x) => Number(x.championId)));
+    const banned = new Set((cs.banned || []).map(Number));
+    const pick = this._autoPickCandidates().find((c) => pickable.has(c) && !taken.has(c) && !banned.has(c));
+    if (!pick) { this._alert('autoPickFailed'); return; }
+    const r = await this.lcu.request('PATCH', `/lol-champ-select/v1/session/actions/${turnId}`, { championId: pick, completed: true });
+    if (r.status >= 200 && r.status < 300) this._alert('autoPicked', { championId: pick });
+    else this._alert('autoPickFailed');
   }
 
   // ---------- runas ----------
@@ -1326,6 +1490,7 @@ class Engine extends EventEmitter {
     this.s.chat = [];
     this.s.chatReady = false;
     this._allyNums = null;
+    this._cellAlias = null;
     this._chatMe = null;
   }
 
@@ -1343,6 +1508,20 @@ class Engine extends EventEmitter {
       if (c) this._chatId = c.id;
     }
     this._emitState();
+  }
+
+  // Apodo anónimo de cada compañero en ranked (por ejemplo "Dagarraco Rocoso"), tal como lo muestra el cliente en tu idioma.
+  // Nunca se usa el nombre real de alguien que el cliente oculta.
+  async _loadCellAliases() {
+    if (!this._cellAlias) this._cellAlias = new Map();
+    const hidden = (this._csCells || []).filter((c) => c && c.nameVisibilityType === 'HIDDEN' && !c.playerAlias && !this._cellAlias.has(c.cellId));
+    for (const c of hidden) {
+      const r = await this.lcu.request('GET', `/lol-champ-select/v1/summoners/${Number(c.cellId)}`);
+      const d = r.status === 200 && r.data ? r.data : {};
+      if (this._diag) { this._diag.cellSummoners = this._diag.cellSummoners || {}; this._diag.cellSummoners[c.cellId] = d; }
+      const nm = d.playerAlias || d.alias || d.anonymousName || '';
+      this._cellAlias.set(c.cellId, nm); // se pregunta una sola vez por celda
+    }
   }
 
   async _nameByPuuid(puuid) {
@@ -1382,16 +1561,21 @@ class Engine extends EventEmitter {
     if (this._diag) { this._diag.chatSample = r.data.slice(-3); this._diag.chatCells = (this._csCells || []).map((c) => ({ cellId: c.cellId, vis: c.nameVisibilityType, alias: c.playerAlias, internal: c.internalName, hasPuuid: !!c.puuid, obf: !!(c.obfuscatedPuuid || c.obfuscatedSummonerId), champ: c.championId })); }
     // Chat de la sala: los nombres salen de los participantes de la conversación, de la sala o del perfil de chat.
     const pn = new Map();
-    if (this.s.phase !== 'ChampSelect') {
+    const rankedCs = this.s.phase === 'ChampSelect' && [420, 440].includes(this._csQueue || this.s.lobbyQueueId);
+    // Participantes del chat. En ranked el chat del champ select ya viene con los apodos anónimos que muestra el cliente.
+    if (this.s.phase !== 'ChampSelect' || rankedCs) {
       const pr = await this.lcu.request('GET', `/lol-chat/v1/conversations/${encodeURIComponent(this._chatId)}/participants`);
       if (pr.status === 200 && Array.isArray(pr.data)) {
         if (this._diag) this._diag.chatParticipants = pr.data;
         pr.data.forEach((x) => {
-          const nm = x.gameName || x.name || x.displayName;
+          const nm = x.playerAlias || x.alias || x.gameName || x.name || x.displayName;
           if (!nm) return;
-          [x.pid, x.id, x.summonerId].forEach((k) => { if (k) pn.set(String(k), nm); });
+          [x.pid, x.id, x.summonerId, x.puuid, x.obfuscatedPuuid, x.obfuscatedSummonerId].forEach((k) => { if (k) pn.set(String(k), nm); });
         });
       }
+    }
+    if (rankedCs) await this._loadCellAliases();
+    if (this.s.phase !== 'ChampSelect') {
       if (!this._chatMe) {
         const mr = await this.lcu.request('GET', '/lol-chat/v1/me');
         if (mr.status === 200 && mr.data) this._chatMe = { id: mr.data.id, pid: mr.data.pid, name: mr.data.gameName || mr.data.name };
@@ -1407,7 +1591,8 @@ class Engine extends EventEmitter {
       const hide = !inParty && this.s.phase === 'ChampSelect' && [420, 440].includes(this._csQueue || this.s.lobbyQueueId);
       const who = m.fromPuuid || m.fromObfuscatedPuuid || m.fromSummonerId || m.fromObfuscatedSummonerId || m.fromId || m.fromPid;
       if (!this._allyNums) this._allyNums = new Map();
-      const alias = cell && !mine && hide ? (cell.playerAlias || cell.internalName || '') : '';
+      const partName = [m.fromPid, m.fromId, m.fromPuuid, m.fromObfuscatedPuuid, m.fromSummonerId, m.fromObfuscatedSummonerId].map((k) => k && pn.get(String(k))).find(Boolean) || '';
+      const alias = !mine && hide ? ((cell && (cell.playerAlias || (this._cellAlias && this._cellAlias.get(cell.cellId)))) || partName || '') : '';
       if (!mine && !inParty && !alias && !this._allyNums.has(who)) this._allyNums.set(who, this._allyNums.size + 1);
       let name = '';
       // En ranked el cliente muestra un apodo anónimo (playerAlias): se usa ese mismo en vez de "Aliado N".
@@ -1422,7 +1607,7 @@ class Engine extends EventEmitter {
         id: m.id,
         champId: cell ? (cell.championId || cell.championPickIntent || 0) : 0,
         pos: cell ? (cell.assignedPosition || '') : '',
-        allyN: mine || inParty ? 0 : this._allyNums.get(who),
+        allyN: mine || inParty || cell ? 0 : this._allyNums.get(who),
         name,
         body: String(m.body).slice(0, 500),
         mine: !!mine,

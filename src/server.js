@@ -178,6 +178,7 @@ async function startServer(opts = {}) {
     answerInvite: (m) => engine.answerInvite(m.inviteId, !!m.accept),
     setPreBan: (m) => { engine.setPreBan(m.championId); return { ok: true }; },
     setPrePick: (m) => { engine.setPrePick(m.championId); return { ok: true }; },
+    setFavorites: (m) => { engine.setFavorites({ ids: m.ids, autoPick: m.autoPick, useHistory: m.useHistory }); return { ok: true }; },
     selectRunePage: (m) => engine.selectRunePage(m.id),
     sendChat: (m) => engine.sendChat(m.body),
     selectSkin: (m) => engine.selectSkin(m.skinId),

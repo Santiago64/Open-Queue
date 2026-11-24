@@ -91,3 +91,12 @@
 
 ##  v0.8.7
 - Ícono propio de la app (ventana, barra de tareas, pestaña del navegador, pantalla de inicio del celu y README). Es provisorio y se puede cambiar reemplazando `public/icon.png` y `public/icon.ico`.
+
+##  v0.8.8
+- **Campeones baneados**: en el selector aparecen en blanco y negro con la marca "BAN" y no se pueden elegir (antes te dejaba tocarlo, se cerraba el menú y perdías tiempo). Si el juego rechaza el pick, el menú queda abierto para elegir otro.
+- **Campeones favoritos (hasta 3)** en la pantalla principal, con **pick automático en el último segundo**: si el reloj llega a 0 y no elegiste, se confirma lo que tengas marcado o, si no, el mejor favorito disponible (no baneado ni tomado). Se activa con un interruptor.
+- **Recomendar según mis partidas** (interruptor): lee tus últimas partidas de la Grieta y tu maestría para ordenar tus favoritos según la línea que te tocó y mostrar en el champ select tus mejores campeones para esa línea (con victorias y derrotas). Tocás uno y se marca.
+- **Sonidos propios** en Ajustes > Personalizar para cada aviso: partida encontrada, tu turno, pedido de cambio, mensaje en el chat y pick automático (hasta 3 MB cada uno).
+- **Fondo con GIF**: el fondo propio ahora acepta GIFs animados (hasta 8 MB). El fondo y los sonidos se guardan en el celu en IndexedDB; los que ya tenías se pasan solos.
+- **Chat en ranked**: se busca el apodo anónimo del cliente (por ejemplo "Dagarraco Rocoso") también en los datos de cada jugador del champ select y en los participantes del chat, en vez de "Aliado N". Junto al nombre se ve solo el ícono del campeón y la línea (sin el nombre del campeón).
+

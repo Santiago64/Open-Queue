@@ -85,10 +85,13 @@
   document.addEventListener('oq-theme', () => { if (!$('sheetList').classList.contains('hidden') && $('slTitle').textContent === t('settings')) openList('settings'); });
 
   function onAlert(a) {
-    if (a.kind === 'matchFound') { if (!(window.OQTheme && window.OQTheme.playSound())) beep([784, 988, 1175, 1568]); vibrate([400, 150, 400, 150, 400]); }
-    else if (a.kind === 'yourTurn') { beep([880, 1175]); vibrate([300, 120, 300]); }
-    else if (a.kind === 'swap') { beep([660, 880, 660]); vibrate([200, 100, 200, 100, 200]); }
-    else if (a.kind === 'chat') { vibrate(60); }
+    const own = (k) => !!(window.OQTheme && window.OQTheme.playSound(k)); // sonido propio (Ajustes > Personalizar)
+    if (a.kind === 'matchFound') { if (!own('matchFound')) beep([784, 988, 1175, 1568]); vibrate([400, 150, 400, 150, 400]); }
+    else if (a.kind === 'yourTurn') { if (!own('yourTurn')) beep([880, 1175]); vibrate([300, 120, 300]); }
+    else if (a.kind === 'swap') { if (!own('swap')) beep([660, 880, 660]); vibrate([200, 100, 200, 100, 200]); }
+    else if (a.kind === 'chat') { own('chat'); vibrate(60); }
+    else if (a.kind === 'autoPicked') { if (!own('autoPick')) beep([988, 784]); toast(`${t('autoPicked')}: ${champName(a.championId)}`, 5000); vibrate([200, 80, 200]); }
+    else if (a.kind === 'autoPickFailed') { toast(t('autoPickFailed'), 5000); vibrate([100, 60, 100]); }
     else if (a.kind === 'swapDeclined') { toast(`${t('swapSt_DECLINED')}: ${a.to || ''}`, 3500); vibrate([100, 60, 100]); }
     else if (a.kind === 'invite') { toast(`${t('inviteFrom')} ${a.from || ''}`, 5000); vibrate([100, 60, 100]); }
     else if (a.kind === 'inviteAccepted') toast(`${t('inviteJoined')} ${a.from || ''}`, 3500);
@@ -450,6 +453,7 @@
       h += `<button class="btn block" style="margin-bottom:${cs.bansDone ? 12 : 4}px" data-act="openChamp" data-mode="hover" ${cs.bansDone ? '' : 'disabled'}>${t('hoverChamp')}</button>`;
       if (!cs.bansDone) h += `<p class="note" style="margin:0 0 12px">${t('pickFirstBans')}</p>`;
     }
+    h += recommendHtml(cs);
     if (cs.benchEnabled) h += benchHtml(cs);
     else if (!cs.hasActions) h += `<div class="card"><p class="note" style="margin:0">${t('noPool')}</p></div>`;
 
@@ -558,7 +562,41 @@
       <div class="row">${bid ? champImg(bid) : ''}<div style="flex:1"><div>${bid ? esc(champName(bid)) : `<span class="dim">${t('preBanNone')}</span>`}</div></div>
       <button class="btn small" data-act="openChamp" data-mode="preban">${t('chooseChamp')}</button>
       ${bid ? `<button class="btn small" data-act="clearPreBan">${t('prePickClear')}</button>` : ''}</div>
-      <p class="note">${t('preBanHelp')}</p></div>`;
+      <p class="note">${t('preBanHelp')}</p></div>
+      ${favoritesHtml()}`;
+  }
+
+  // Favoritos (hasta 3) y pick automático en el último segundo.
+  function favoritesHtml() {
+    const f = state.settings.favorites || { ids: [] };
+    const ids = f.ids || [];
+    const slots = [0, 1, 2].map((i) => {
+      const k = ids[i];
+      return `<button class="pill" style="flex:1;flex-direction:column;padding:8px;min-width:0" data-act="openFav" data-i="${i}">${k ? champImg(k) : '<div class="portrait"></div>'}<span style="font-size:11px">${k ? esc(champName(k)) : '+'}</span></button>`;
+    }).join('');
+    return `<div class="card"><h2>${t('favorites')}</h2>
+      <div class="row" style="gap:8px">${slots}</div>
+      ${ids.length ? `<button class="btn small" style="margin-top:8px" data-act="clearFavs">${t('favClear')}</button>` : ''}
+      <div class="row" style="margin-top:12px"><span style="flex:1">${t('autoPick')}</span><div class="toggle ${f.autoPick ? 'on' : ''}" data-act="toggleAutoPick"></div></div>
+      <p class="note" style="margin-top:4px">${t('autoPickHelp')}</p>
+      <div class="row" style="margin-top:10px"><span style="flex:1">${t('useHistory')}</span><div class="toggle ${f.useHistory ? 'on' : ''}" data-act="toggleHistory"></div></div>
+      <p class="note" style="margin-top:4px">${t('useHistoryHelp')}</p></div>`;
+  }
+
+  // En el champ select: tus mejores campeones para tu línea según tus partidas (si lo activaste).
+  function recommendHtml(cs) {
+    const f = state.settings.favorites || {};
+    const rec = (cs.recommend || []).filter((x) => !bannedKeys().has(x.championId)).slice(0, 4);
+    const pickOpen = cs.myPickAction && !cs.myPickAction.completed && !cs.benchEnabled;
+    let h = '';
+    if (f.useHistory && rec.length && pickOpen) {
+      h += `<div class="card"><h3 style="margin:0 0 8px;font-size:12px;color:var(--dim)">${t('recTitle')}</h3><div class="row" style="gap:8px">${rec.map((x) => {
+        const g = x.games || x.gamesAll; const w = x.games ? x.wins : x.winsAll;
+        return `<button class="pill" style="flex:1;flex-direction:column;padding:6px;min-width:0" data-act="recHover" data-k="${x.championId}">${champImg(x.championId)}<span style="font-size:11px">${g ? `${w}V ${g - w}D` : t('recMastery')}</span></button>`;
+      }).join('')}</div></div>`;
+    }
+    if (f.autoPick && pickOpen && (f.ids || []).length) h += `<p class="note" style="margin:0 0 10px">${t('autoPickOn')}</p>`;
+    return h;
   }
 
   function renderChat() {
@@ -570,8 +608,10 @@
     const atBottom = box.scrollHeight - box.scrollTop - box.clientHeight < 40;
     const chatHtml = state.chat.map((m) => {
       const pos = m.pos ? (POS[OQ.lang][m.pos.toLowerCase()] || '') : '';
-      const who = m.champId ? `<span class="chwho">${champImg(m.champId)}<span>${esc(champName(m.champId))}${pos ? ' · ' + esc(pos) : ''}</span></span>` : '';
-      return `<div class="m ${m.mine ? 'mine' : ''}"><b>${esc(m.name || (t('ally') + ' ' + m.allyN))}</b>${who}${esc(m.body)}</div>`;
+      // Solo el ícono del campeón y la línea (sin el nombre del campeón: es mucho texto).
+      const who = (m.champId || pos) ? `<span class="chwho">${m.champId ? champImg(m.champId) : ''}${pos ? `<span>${esc(pos)}</span>` : ''}</span>` : '';
+      const name = m.name || (m.allyN ? t('ally') + ' ' + m.allyN : '');
+      return `<div class="m ${m.mine ? 'mine' : ''}">${name ? `<b>${esc(name)}</b>` : ''}${who}${esc(m.body)}</div>`;
     }).join('');
     if (box._h !== chatHtml) { box.innerHTML = chatHtml; box._h = chatHtml; if (atBottom) box.scrollTop = box.scrollHeight; }
   }
@@ -617,8 +657,8 @@
       if (own && own.length) { const ok = new Set(own); S.champions.forEach((c) => { if (!ok.has(c.key)) d.add(c.key); }); }
       return d;
     }
-    if (!cs || sheet.mode === 'prepick' || sheet.mode === 'preban') return d;
-    cs.bans.my.concat(cs.bans.their).forEach((b) => { if (b > 0) d.add(b); });
+    if (!cs || sheet.mode === 'prepick' || sheet.mode === 'preban' || sheet.mode === 'fav') return d;
+    bannedKeys().forEach((b) => d.add(b));
     const isBan = sheet.mode === 'turn' && cs.myTurn && cs.myTurn.type === 'ban';
     if (!isBan) {
       cs.myTeam.concat(cs.theirTeam).forEach((p) => { if (p.championId > 0 && !p.isMe) d.add(p.championId); });
@@ -630,7 +670,22 @@
     return d;
   }
 
+  function bannedKeys() {
+    const cs = state && state.champSelect;
+    if (!cs) return new Set();
+    return new Set([].concat(cs.banned || [], cs.bans.my, cs.bans.their).map(Number).filter((b) => b > 0));
+  }
+
   function openChampSheet(mode, qi) {
+    if (mode === 'fav') {
+      sheet.mode = 'fav'; sheet.qi = qi;
+      const f = (state.settings.favorites && state.settings.favorites.ids) || [];
+      sheet.champ = f[qi] || null; sheet.search = ''; sheet.cls = '';
+      $('scSearch').value = '';
+      $('sheetChamp').classList.remove('hidden');
+      renderSheets();
+      return;
+    }
     sheet.mode = mode;
     if (mode === 'qslot') {
       sheet.qi = qi;
@@ -647,6 +702,7 @@
       : mode === 'preban' ? state.settings.preBan.championId
       : banTurn ? null // en un ban nunca se arranca con un campeón marcado
       : (cs && cs.myTurn && cs.myTurn.championId) || (cs && cs.myPickAction && cs.myPickAction.championId) || null;
+    if (sheet.champ && disabledKeys().has(sheet.champ)) sheet.champ = null; // nunca arranca marcado un campeón baneado o tomado
     sheet.search = ''; sheet.cls = '';
     $('scSearch').value = '';
     $('sheetChamp').classList.remove('hidden');
@@ -659,11 +715,11 @@
     // si el turno terminó, la hoja de "turno" pasa a modo "mostrar"
     if (sheet.mode === 'turn' && !(cs && cs.myTurn)) sheet.mode = 'hover';
     if (sheet.mode === 'hover' && !(cs && cs.myPickAction && !cs.myPickAction.completed)) { closeSheets(); return; }
-    if (sheet.mode === 'turn' && cs.myTurn && cs.myTurn.type === 'pick' && !sheet.champ) sheet.champ = cs.myTurn.championId || null;
+    if (sheet.mode === 'turn' && cs.myTurn && cs.myTurn.type === 'pick' && !sheet.champ && cs.myTurn.championId && !bannedKeys().has(cs.myTurn.championId)) sheet.champ = cs.myTurn.championId;
 
     if (sheet.mode === 'qslot' && !(state && state.lobby && state.lobby.quickPlay)) { closeSheets(); return; }
     const isBan = sheet.mode === 'turn' && cs && cs.myTurn && cs.myTurn.type === 'ban';
-    $('scTitle').textContent = sheet.mode === 'prepick' ? t('prePick') : sheet.mode === 'preban' ? t('preBan') : isBan ? t('chooseBan') : t('chooseChamp');
+    $('scTitle').textContent = sheet.mode === 'fav' ? `${t('favorites')} ${sheet.qi + 1}` : sheet.mode === 'prepick' ? t('prePick') : sheet.mode === 'preban' ? t('preBan') : isBan ? t('chooseBan') : t('chooseChamp');
     $('scNoData').textContent = S.ok ? '' : t('noData');
 
     const classes = ['Fighter', 'Tank', 'Mage', 'Assassin', 'Marksman', 'Support'];
@@ -671,18 +727,21 @@
       classes.map((c) => `<button class="chip ${sheet.cls === c ? 'on' : ''}" data-act="cls" data-v="${c}">${t('cls_' + c)}</button>`).join('');
 
     const off = disabledKeys();
+    const banSet = (sheet.mode === 'turn' || sheet.mode === 'hover') ? bannedKeys() : new Set();
+    if (sheet.champ && off.has(sheet.champ)) sheet.champ = null;
     let items = S.champions.length ? S.champions : ((cs && cs.pickable) || []).map((k) => ({ key: k, name: String(k), tags: [] }));
     const q = norm(sheet.search.trim());
     items = items.filter((c) => (!sheet.cls || (c.tags || []).includes(sheet.cls)) && (!q || norm(c.name).includes(q)));
     const gridHtml = items.map((c) => {
       const isOff = off.has(c.key);
-      return `<div class="cell ${sheet.champ === c.key ? 'sel' : ''} ${isOff ? 'off' : ''}" data-act="pickCell" data-k="${c.key}">${champImg(c.key)}<span>${esc(c.name)}</span></div>`;
+      const isBan = isOff && banSet.has(c.key);
+      return `<div class="cell ${sheet.champ === c.key ? 'sel' : ''} ${isOff ? 'off' : ''} ${isBan ? 'ban' : ''}" data-act="pickCell" data-k="${c.key}"${isOff ? ' aria-disabled="true"' : ''}>${champImg(c.key)}<span>${esc(c.name)}</span>${isBan ? `<em class="bantag">${t('bannedTag')}</em>` : ''}</div>`;
     }).join('');
     const gridEl = $('scGrid');
     if (gridEl._h !== gridHtml) { gridEl.innerHTML = gridHtml; gridEl._h = gridHtml; }
 
     const btn = $('scConfirm');
-    if (sheet.mode === 'prepick' || sheet.mode === 'preban' || sheet.mode === 'qslot') { btn.textContent = t('confirm'); btn.disabled = !sheet.champ; }
+    if (sheet.mode === 'prepick' || sheet.mode === 'preban' || sheet.mode === 'qslot' || sheet.mode === 'fav') { btn.textContent = t('confirm'); btn.disabled = !sheet.champ; }
     else if (sheet.mode === 'turn') { btn.textContent = isBan ? t('confirmBan') : t('confirmPick'); btn.disabled = !sheet.champ; }
     else { btn.textContent = t('confirm'); btn.disabled = false; }
   }
@@ -1031,12 +1090,18 @@
       case 'cls': sheet.cls = v; renderSheets(); break;
       case 'pickCell': {
         const k = Number(el.getAttribute('data-k'));
+        if (el.classList.contains('off')) { toast(el.classList.contains('ban') ? t('champBanned') : t('champUnavailable'), 1800); break; } // no se puede elegir: el menú queda abierto
         sheet.champ = k;
         if (sheet.mode === 'turn' || sheet.mode === 'hover') cmd('hover', { championId: k });
         renderSheets();
         break;
       }
       case 'clearPreBan': cmd('setPreBan', { championId: null }); break;
+      case 'openFav': openChampSheet('fav', Number(el.getAttribute('data-i'))); break;
+      case 'clearFavs': cmd('setFavorites', { ids: [] }); break;
+      case 'toggleAutoPick': cmd('setFavorites', { autoPick: !(state.settings.favorites && state.settings.favorites.autoPick) }); break;
+      case 'toggleHistory': cmd('setFavorites', { useHistory: !(state.settings.favorites && state.settings.favorites.useHistory) }); break;
+      case 'recHover': request('hover', { championId: Number(el.getAttribute('data-k')) }).then((r) => { if (!(r && r.ok)) toast(failText(r), 3000); }); break;
       case 'clearPre': cmd('setPrePick', { championId: null }); break;
       case 'openSpell': openList('spell', el.getAttribute('data-slot')); break;
       case 'openRune': openRunes(null); break;
@@ -1162,7 +1227,7 @@
         setKeepAwake(!on); setTimeout(() => openList('settings'), 50);
         break;
       }
-      case 'testSound': beep([784, 988, 1175, 1568]); vibrate([200, 100, 200]); break;
+      case 'testSound': if (!(window.OQTheme && window.OQTheme.playSound('matchFound'))) beep([784, 988, 1175, 1568]); vibrate([200, 100, 200]); break;
       case 'unlink':
         try { localStorage.removeItem('oq_token'); } catch (_) {}
         token = null; authed = false; closeSheets(); showAuth(); try { ws.close(); } catch (_) {}
@@ -1174,7 +1239,23 @@
     if (sheet.mode === 'prepick') cmd('setPrePick', { championId: sheet.champ });
     else if (sheet.mode === 'preban') cmd('setPreBan', { championId: sheet.champ });
     else if (sheet.mode === 'qslot') slotCmd({ index: sheet.qi, patch: { championId: sheet.champ } });
-    else if (sheet.mode === 'turn') cmd('lockIn', { championId: sheet.champ });
+    else if (sheet.mode === 'fav') {
+      const ids = ((state.settings.favorites && state.settings.favorites.ids) || []).slice(0, 3);
+      const other = ids.indexOf(sheet.champ);
+      if (other >= 0 && other !== sheet.qi) ids[other] = ids[sheet.qi] || 0; // si ya estaba en otro lugar, se intercambian
+      ids[sheet.qi] = sheet.champ;
+      cmd('setFavorites', { ids: ids.filter(Boolean) });
+    } else if (sheet.mode === 'turn') {
+      // Si el cliente rechaza el pick, el menú queda abierto para elegir otro sin perder tiempo.
+      const btn = $('scConfirm');
+      if (!sheet.champ || disabledKeys().has(sheet.champ)) { toast(t('champBanned'), 1800); return; }
+      btn.disabled = true;
+      request('lockIn', { championId: sheet.champ }).then((r) => {
+        if (r && r.ok) closeSheets();
+        else { toast(r && r.error === 'banned' ? t('champBanned') : failText(r), 3000); renderSheets(); }
+      });
+      return;
+    }
     closeSheets();
   });
   $('scSearch').addEventListener('input', (e) => { sheet.search = e.target.value; renderSheets(); });

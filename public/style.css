@@ -102,7 +102,6 @@ input:focus, select:focus { outline: 1px solid var(--accent); }
 .cell { border: 1px solid var(--line); background: var(--panel); padding: 4px; text-align: center; cursor: pointer; font-size: 10.5px; color: var(--dim); }
 .cell .portrait { width: 100%; height: auto; aspect-ratio: 1; margin-bottom: 3px; }
 .cell.sel { border-color: var(--accent); color: var(--text); box-shadow: 0 0 0 1px var(--accent); }
-.cell.off { opacity: .25; pointer-events: none; }
 .list .item { display: flex; align-items: center; gap: 10px; padding: 14px 10px; border-bottom: 1px solid var(--line); cursor: pointer; }
 .list .item.sel { background: var(--panel2); font-weight: 700; }
 
@@ -152,3 +151,8 @@ body.stream .secret.peek { filter: none; }
 
 .chwho{display:inline-flex;align-items:center;gap:4px;margin:0 6px;font-size:11px;opacity:.7;vertical-align:middle}
 .chwho .portrait{width:18px;height:18px;border-radius:50%;min-width:18px}
+/* Campeones no disponibles en el selector: en blanco y negro y sin poder elegirlos */
+.cell.off { opacity: .5; pointer-events: auto; cursor: not-allowed; filter: grayscale(1); }
+.cell.off img { filter: grayscale(1) brightness(.75); }
+.cell { position: relative; }
+.cell .bantag { position: absolute; top: 4px; left: 4px; right: 4px; font-style: normal; font-size: 9px; font-weight: 700; letter-spacing: .08em; color: #fff; background: rgba(224,72,90,.85); padding: 1px 0; }

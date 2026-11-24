@@ -161,7 +161,13 @@ async function startMock() {
       if (key === 'GET /lol-lobby/v2/received-invitations') return ok(st.invites || []);
       if ((m = /^POST \/lol-lobby\/v2\/received-invitations\/(.+)\/accept$/.exec(key))) { st.invites = (st.invites || []).filter((x) => x.invitationId !== m[1]); st.queueId = 450; setPhase('Lobby'); return ok(undefined, 204); }
       if ((m = /^POST \/lol-lobby\/v2\/received-invitations\/(.+)\/decline$/.exec(key))) { st.invites = (st.invites || []).filter((x) => x.invitationId !== m[1]); return ok(undefined, 204); }
+      if ((m = /^GET \/lol-match-history\/v1\/products\/lol\/current-summoner\/matches\?begIndex=(\d+)&endIndex=(\d+)$/.exec(key))) {
+        return ok({ games: { games: (st.history || []).slice(Number(m[1]), Number(m[2])) } });
+      }
+      if (key === 'GET /lol-champion-mastery/v1/local-player/champion-mastery') return ok(st.mastery || []);
+      if ((m = /^GET \/lol-champ-select\/v1\/summoners\/(\d+)$/.exec(key))) return ok((st.cellSummoners || {})[m[1]] || {});
       if (key === 'GET /lol-chat/v1/me') return ok({ id: 'me1', pid: 'pme', gameName: 'Yo' });
+      if (/^GET \/lol-chat\/v1\/conversations\/x(@|%40)champ-select\/participants$/.test(key) && st.csParticipants) return ok(st.csParticipants);
       if (/^GET \/lol-chat\/v1\/conversations\/.+\/participants$/.test(key)) return ok([{ pid: 'p5', name: 'Amigo Lobby' }, { pid: 'pme', name: 'Yo' }]);
       if (key === 'GET /lol-chat/v1/conversations') return ok([{ id: 'x@champ-select', type: 'championSelect' }, { id: 'y', type: 'chat' }, { id: 'lob@party', type: 'groupchat' }].filter((c) => c.type !== 'groupchat' || st.lobbyChat !== false));
       if (/^GET \/lol-chat\/v1\/conversations\/.+\/messages$/.test(key)) return ok(st.chat);

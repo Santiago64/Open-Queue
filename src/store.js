@@ -12,6 +12,9 @@ const DEFAULTS = {
     preBan: { championId: null },
     autoInvite: { enabled: false }, // aceptar solo las invitaciones a sala
     roles: { first: '', second: '' }, // rol principal y secundario para Normal y Clasificatoria
+    // Hasta 3 favoritos. autoPick: si llega el final de tu turno sin pick, se elige uno solo.
+    // useHistory: ordena y recomienda según tus partidas (y la línea que te tocó).
+    favorites: { ids: [], autoPick: false, useHistory: false },
   },
   pairing: { code: null, tokens: [] },
 };
@@ -33,6 +36,8 @@ class Store {
       this.data.settings.prePick = Object.assign({}, DEFAULTS.settings.prePick, (raw.settings || {}).prePick || {});
       this.data.settings.autoInvite = Object.assign({}, DEFAULTS.settings.autoInvite, (raw.settings || {}).autoInvite || {});
       this.data.settings.preBan = Object.assign({}, DEFAULTS.settings.preBan, (raw.settings || {}).preBan || {});
+      this.data.settings.favorites = Object.assign({}, DEFAULTS.settings.favorites, (raw.settings || {}).favorites || {});
+      if (!Array.isArray(this.data.settings.favorites.ids)) this.data.settings.favorites.ids = [];
       this.data.settings.roles = Object.assign({}, DEFAULTS.settings.roles, (raw.settings || {}).roles || {});
       this.data.pairing = Object.assign({}, DEFAULTS.pairing, raw.pairing || {});
     } catch (_) { /* primera vez */ }

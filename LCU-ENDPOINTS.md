@@ -12,7 +12,9 @@ Open Queue talks only to the League client running on the player's own PC (127.0
 - /lol-game-data/assets/v1/summoner-spells.json
 - /lol-perks/v1/pages, currentpage, inventory, styles, perks, recommended-pages/champion/{id}/position/{pos}/map/{map}, quick-play-selections/champion/{id}/position/{pos}
 - /lol-summoner/v1/current-summoner, /lol-summoner/v1/summoners/{id}
-- /lol-chat/v1/conversations (champ select chat of the lobby)
+- /lol-chat/v1/conversations, /lol-chat/v1/conversations/{id}/participants (champ select chat of the lobby)
+- /lol-champ-select/v1/summoners/{cellId} (anonymous alias of hidden teammates in ranked)
+- /lol-match-history/v1/products/lol/current-summoner/matches, /lol-champion-mastery/v1/local-player/champion-mastery (only if you turn on "Recommend from my matches"; your own data only)
 
 ## Actions on the player's own account (POST / PUT / PATCH / DELETE)
 - Ready check: POST /lol-matchmaking/v1/ready-check/accept | decline

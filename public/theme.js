@@ -1,5 +1,6 @@
-// Personalización (solo en este dispositivo): color, tipografía, fondo propio, sonido propio y orden de los paneles.
-// No incluye ningún arte de Riot: el fondo y el sonido los sube la persona desde su propio celular.
+// Personalización (solo en este dispositivo): color, tipografía, fondo propio (imagen o GIF), sonidos propios y orden de los paneles.
+// No incluye ningún arte de Riot: el fondo y los sonidos los sube la persona desde su propio celular.
+// El fondo y los sonidos se guardan en IndexedDB (entran archivos más grandes que en localStorage, por ejemplo GIFs).
 (function () {
   const KEY = 'oq_theme';
   const COLORS = ['#f2f2f5', '#c9a24b', '#4fa3ff', '#e0485a', '#46c28a', '#a66bff'];
@@ -10,10 +11,64 @@
     serif: { n: 'Serif', d: 'Georgia,"Times New Roman",serif', b: 'Georgia,"Times New Roman",serif' },
   };
   const PANELS = ['autoCard', 'phaseArea', 'preCard', 'chatCard'];
-  const DEF = { color: '#f2f2f5', font: 'classic', fontData: '', fontName: '', bg: '', bgDim: 0.75, sound: '', order: PANELS.slice() };
+  const SOUNDS = ['matchFound', 'yourTurn', 'swap', 'chat', 'autoPick'];
+  const MAX_SOUND = 3 * 1024 * 1024;
+  const MAX_BG = 8 * 1024 * 1024;
+  // bg / sound: datos viejos (v0.8.7 y antes, en localStorage); se pasan a IndexedDB al abrir.
+  const DEF = { color: '#f2f2f5', font: 'classic', fontData: '', fontName: '', bg: '', bgDim: 0.75, sound: '', hasBg: false, sounds: {}, order: PANELS.slice() };
   let cfg = Object.assign({}, DEF);
   try { Object.assign(cfg, JSON.parse(localStorage.getItem(KEY) || '{}')); } catch (_) {}
   if (!Array.isArray(cfg.order) || PANELS.some((p) => cfg.order.indexOf(p) < 0)) cfg.order = PANELS.slice();
+  if (!cfg.sounds || typeof cfg.sounds !== 'object') cfg.sounds = {};
+
+  // ---------- IndexedDB (fondo y sonidos) ----------
+  let dbp = null;
+  function db() {
+    if (!dbp) dbp = new Promise((res, rej) => {
+      try {
+        const rq = indexedDB.open('oq_media', 1);
+        rq.onupgradeneeded = () => rq.result.createObjectStore('m');
+        rq.onsuccess = () => res(rq.result);
+        rq.onerror = () => rej(rq.error);
+      } catch (e) { rej(e); }
+    });
+    return dbp;
+  }
+  async function idb(mode, fn) {
+    const d = await db();
+    return new Promise((res, rej) => {
+      const tx = d.transaction('m', mode); const st = tx.objectStore('m'); const rq = fn(st);
+      tx.oncomplete = () => res(rq && rq.result); tx.onerror = () => rej(tx.error); tx.onabort = () => rej(tx.error);
+    });
+  }
+  const mediaGet = (k) => idb('readonly', (st) => st.get(k)).catch(() => null);
+  const mediaPut = (k, v) => idb('readwrite', (st) => st.put(v, k));
+  const mediaDel = (k) => idb('readwrite', (st) => st.delete(k)).catch(() => {});
+  function dataUrlToBlob(u) {
+    const m = /^data:([^;,]*)(;base64)?,(.*)$/.exec(u || ''); if (!m) return null;
+    const bin = m[2] ? atob(m[3]) : decodeURIComponent(m[3]); const a = new Uint8Array(bin.length);
+    for (let i = 0; i < bin.length; i++) a[i] = bin.charCodeAt(i);
+    return new Blob([a], { type: m[1] || 'application/octet-stream' });
+  }
+
+  let bgUrl = '';
+  const audios = {};
+  function setBgBlob(b) { if (bgUrl) URL.revokeObjectURL(bgUrl); bgUrl = b ? URL.createObjectURL(b) : ''; }
+  function setSoundBlob(k, b) {
+    if (audios[k] && audios[k].src) URL.revokeObjectURL(audios[k].src);
+    delete audios[k];
+    if (b) { const a = new Audio(URL.createObjectURL(b)); a.preload = 'auto'; audios[k] = a; }
+  }
+  async function loadMedia() {
+    try {
+      // Pasa el fondo y el sonido viejos (guardados como texto en localStorage) a IndexedDB.
+      if (cfg.bg) { const b = dataUrlToBlob(cfg.bg); if (b) { await mediaPut('bg', b); cfg.hasBg = true; } cfg.bg = ''; save(); }
+      if (cfg.sound) { const b = dataUrlToBlob(cfg.sound); if (b) { await mediaPut('snd_matchFound', b); cfg.sounds.matchFound = 'audio'; } cfg.sound = ''; save(); }
+      if (cfg.hasBg) setBgBlob(await mediaGet('bg'));
+      for (const k of SOUNDS) if (cfg.sounds[k]) setSoundBlob(k, await mediaGet('snd_' + k));
+    } catch (_) {}
+    apply();
+  }
 
   const T = () => window.OQ.t;
   function save() { try { localStorage.setItem(KEY, JSON.stringify(cfg)); return true; } catch (_) { return false; } }
@@ -85,9 +140,10 @@
       const f = FONTS[cfg.font] || FONTS.classic;
       r.setProperty('--display', f.d); r.setProperty('--body', f.b);
     }
-    if (cfg.bg) {
+    const bgSrc = bgUrl || cfg.bg;
+    if ((cfg.hasBg || cfg.bg) && bgSrc) {
       const a = Math.min(0.95, Math.max(0.3, Number(cfg.bgDim) || 0.75));
-      document.body.style.background = `linear-gradient(rgba(10,10,12,${a}),rgba(10,10,12,${a})),url("${cfg.bg}") center/cover fixed no-repeat #0a0a0c`;
+      document.body.style.background = `linear-gradient(rgba(10,10,12,${a}),rgba(10,10,12,${a})),url("${bgSrc}") center/cover fixed no-repeat #0a0a0c`;
     } else document.body.style.background = '';
     const mv = document.getElementById('mainView');
     if (mv) {
@@ -98,6 +154,14 @@
   }
   function changed() { save(); apply(); document.dispatchEvent(new CustomEvent('oq-theme')); }
 
+  // GIF, WebP y PNG se guardan tal cual (así siguen animados); las demás imágenes se achican a JPEG.
+  function readBackground(file, cb) {
+    if (/^image\/(gif|webp|png)$/i.test(file.type || '') || /\.(gif|webp|png)$/i.test(file.name || '')) {
+      if (file.size > MAX_BG) return cb(null, 'big');
+      return cb(file);
+    }
+    readImage(file, (d) => cb(d ? dataUrlToBlob(d) : null));
+  }
   function readImage(file, cb) {
     const fr = new FileReader();
     fr.onload = () => {
@@ -115,10 +179,11 @@
     fr.readAsDataURL(file);
   }
 
-  let audio = null;
-  function playSound() {
-    if (!cfg.sound) return false;
-    try { if (!audio) audio = new Audio(cfg.sound); audio.currentTime = 0; audio.play(); return true; } catch (_) { return false; }
+  // Toca tu sonido propio para ese aviso. Devuelve false si no tenés uno (suena el de siempre).
+  function playSound(kind) {
+    const a = audios[kind || 'matchFound'];
+    if (!a) return false;
+    try { a.currentTime = 0; const p = a.play(); if (p && p.catch) p.catch(() => {}); return true; } catch (_) { return false; }
   }
 
   const PANEL_KEYS = { autoCard: 'thPanelAuto', phaseArea: 'thPanelMain', preCard: 'thPanelPre', chatCard: 'thPanelChat' };
@@ -137,13 +202,15 @@
       <div class="row wrap" style="gap:8px;margin-top:8px"><label class="btn small" style="cursor:pointer">${t('thFontUp')}<input type="file" id="thFontIn" accept=".ttf,.otf,.woff,.woff2,font/*" style="display:none"></label>
         ${cfg.fontData ? `<button class="btn small" data-th="fontClear">${t('thRemove')}</button>` : ''}</div><p class="note">${t('thFontNote')}</p>
       <div class="dim" style="font-size:12px;margin:14px 0 6px">${t('thBg')}</div>
-      <div class="row wrap" style="gap:8px"><label class="btn small" style="cursor:pointer">${t('thUpload')}<input type="file" id="thBgIn" accept="image/*" style="display:none"></label>
-        ${cfg.bg ? `<button class="btn small" data-th="bgClear">${t('thRemove')}</button>` : ''}</div>
-      ${cfg.bg ? `<div class="dim" style="font-size:12px;margin:10px 0 4px">${t('thDim')}</div><input type="range" id="thDim" min="30" max="95" value="${Math.round(cfg.bgDim * 100)}" style="width:100%">` : ''}
-      <p class="note">${t('thBgNote')}</p>
-      <div class="dim" style="font-size:12px;margin:14px 0 6px">${t('thSound')}</div>
-      <div class="row wrap" style="gap:8px"><label class="btn small" style="cursor:pointer">${t('thUpload')}<input type="file" id="thSndIn" accept="audio/*" style="display:none"></label>
-        ${cfg.sound ? `<button class="btn small" data-th="sndTest">${t('testSound')}</button><button class="btn small" data-th="sndClear">${t('thRemove')}</button>` : ''}</div>
+      <div class="row wrap" style="gap:8px"><label class="btn small" style="cursor:pointer">${t('thUpload')}<input type="file" id="thBgIn" accept="image/*,.gif" style="display:none"></label>
+        ${cfg.hasBg ? `<button class="btn small" data-th="bgClear">${t('thRemove')}</button>` : ''}</div>
+      ${cfg.hasBg ? `<div class="dim" style="font-size:12px;margin:10px 0 4px">${t('thDim')}</div><input type="range" id="thDim" min="30" max="95" value="${Math.round(cfg.bgDim * 100)}" style="width:100%">` : ''}
+      <p class="note">${t('thBgGif')} ${t('thBgNote')}</p>
+      <div class="dim" style="font-size:12px;margin:14px 0 6px">${t('thSounds')}</div>
+      ${SOUNDS.map((k) => `<div class="row wrap" style="gap:8px;margin-bottom:6px;align-items:center"><span style="flex:1;min-width:120px">${t('snd_' + k)}${cfg.sounds[k] ? ` <small class="dim">· ${esc(cfg.sounds[k])}</small>` : ''}</span>
+        <label class="btn small" style="cursor:pointer">${t('thUpload')}<input type="file" class="thSndIn" data-k="${k}" accept="audio/*" style="display:none"></label>
+        ${cfg.sounds[k] ? `<button class="btn small" data-th="sndTest" data-v="${k}">&#9654;</button><button class="btn small" data-th="sndClear" data-v="${k}">${t('thRemove')}</button>` : ''}</div>`).join('')}
+      <p class="note">${t('thSoundsHelp')}</p>
       <div class="dim" style="font-size:12px;margin:14px 0 6px">${t('thOrder')}</div>
       ${cfg.order.map((id, i) => `<div class="row" style="gap:8px;margin-bottom:6px"><span style="flex:1">${t(PANEL_KEYS[id])}</span>
         <button class="btn small" data-th="up" data-v="${i}" ${i === 0 ? 'disabled' : ''}>&uarr;</button>
@@ -156,14 +223,17 @@
     const a = el.getAttribute('data-th'); const v = el.getAttribute('data-v');
     if (a === 'color') cfg.color = v;
     else if (a === 'font') cfg.font = v;
-    else if (a === 'bgClear') cfg.bg = '';
+    else if (a === 'bgClear') { cfg.bg = ''; cfg.hasBg = false; setBgBlob(null); mediaDel('bg'); }
     else if (a === 'fontClear') { cfg.fontData = ''; cfg.fontName = ''; if (cfg.font === 'custom') cfg.font = 'classic'; }
-    else if (a === 'sndClear') { cfg.sound = ''; audio = null; }
-    else if (a === 'sndTest') { playSound(); return; }
+    else if (a === 'sndClear') { delete cfg.sounds[v]; setSoundBlob(v, null); mediaDel('snd_' + v); }
+    else if (a === 'sndTest') { playSound(v); return; }
     else if (a === 'up' || a === 'down') {
       const i = Number(v); const j = a === 'up' ? i - 1 : i + 1;
       if (j >= 0 && j < cfg.order.length) { const o = cfg.order; [o[i], o[j]] = [o[j], o[i]]; }
-    } else if (a === 'reset') { cfg = Object.assign({}, DEF, { order: PANELS.slice() }); audio = null; }
+    } else if (a === 'reset') {
+      cfg = Object.assign({}, DEF, { order: PANELS.slice(), sounds: {} });
+      setBgBlob(null); mediaDel('bg'); SOUNDS.forEach((k) => { setSoundBlob(k, null); mediaDel('snd_' + k); });
+    }
     changed();
   });
   document.addEventListener('input', (e) => {
@@ -185,19 +255,20 @@
       };
       fr.readAsDataURL(f);
     } else if (id === 'thBgIn' && e.target.files[0]) {
-      readImage(e.target.files[0], (d) => {
-        if (!d) return err(T()('thBadFile'));
-        cfg.bg = d; if (!save()) { cfg.bg = ''; return err(T()('thTooBig')); } changed();
+      readBackground(e.target.files[0], (b, why) => {
+        if (!b) return err(T()(why === 'big' ? 'thTooBigBg' : 'thBadFile'));
+        mediaPut('bg', b).then(() => { cfg.bg = ''; cfg.hasBg = true; setBgBlob(b); changed(); }).catch(() => err(T()('thTooBigBg')));
       });
-    } else if (id === 'thSndIn' && e.target.files[0]) {
-      const f = e.target.files[0];
-      if (f.size > 600 * 1024) return err(T()('thTooBig'));
-      const fr = new FileReader();
-      fr.onload = () => { cfg.sound = fr.result; audio = null; if (!save()) { cfg.sound = ''; return err(T()('thTooBig')); } changed(); };
-      fr.readAsDataURL(f);
+    } else if (e.target.classList && e.target.classList.contains('thSndIn') && e.target.files[0]) {
+      const f = e.target.files[0]; const k = e.target.getAttribute('data-k');
+      if (SOUNDS.indexOf(k) < 0) return;
+      if (f.size > MAX_SOUND) return err(T()('thTooBig'));
+      mediaPut('snd_' + k, f).then(() => {
+        cfg.sounds[k] = (f.name || 'audio').replace(/\.[^.]+$/, '').slice(0, 24); setSoundBlob(k, f); changed();
+      }).catch(() => err(T()('thBadFile')));
     }
   });
 
-  window.OQTheme = { apply, html, playSound, get hasSound() { return !!cfg.sound; } };
-  if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', apply); else apply();
+  window.OQTheme = { apply, html, playSound, get hasSound() { return !!audios.matchFound; } };
+  if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', () => { apply(); loadMedia(); }); else { apply(); loadMedia(); }
 })();
