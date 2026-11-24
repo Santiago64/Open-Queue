@@ -1,0 +1,24 @@
+# Dependencias (se instalan con npm install)
+node_modules/
+
+# Logs
+*.log
+npm-debug.log*
+
+# Datos locales de la app (pueden tener tu código de emparejamiento)
+data/
+settings.json
+*.local.json
+
+# Diagnósticos que descargás para probar
+diagnostico-*.json
+
+# Archivos de sistema y editor
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/
+
+# Zips y videos de trabajo
+*.zip
+*.mp4
