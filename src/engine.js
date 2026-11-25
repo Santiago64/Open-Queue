@@ -950,6 +950,7 @@ class Engine extends EventEmitter {
     if (patch.autoPick !== undefined) f.autoPick = !!patch.autoPick;
     if (patch.useHistory !== undefined) f.useHistory = !!patch.useHistory;
     if (patch.when === 'start' || patch.when === 'end') f.when = patch.when;
+    if (patch.autoRunes !== undefined) f.autoRunes = !!patch.autoRunes;
     this.settings.favorites = f;
     this.store.save();
     if (f.useHistory && this.s.phase === 'ChampSelect') this._loadHistory();
@@ -1052,6 +1053,23 @@ class Engine extends EventEmitter {
     return [...new Set(out.map(Number).filter(Boolean))];
   }
 
+  // Runas automáticas: después del pick automático se aplica la primera página recomendada por el propio cliente
+  // para ese campeón y tu línea (las mismas que ves en "Runas recomendadas"). Va sobre la página temporal del cliente.
+  async _autoRunes(championId, log) {
+    try {
+      const cs = this.s.champSelect;
+      if (!cs || cs.benchEnabled || [2400, 3270].includes(Number(cs.queueId)) || cs.subsetPicks || this.s.gameMode === 'KIWI') return; // modos sin runas
+      const me = (cs.myTeam || []).find((p) => p.isMe) || {};
+      const d = await this.runeData(championId, normPos(me.position));
+      const page = d && d.ok && d.recommended && d.recommended[0];
+      if (log) log.runes = page ? { name: page.name, primary: page.primaryStyleId } : 'none';
+      if (!page) { this._alert('autoRunesFailed'); return; }
+      const r = await this.useRunes(page, championId);
+      if (log) log.runesOk = !!(r && r.ok);
+      this._alert(r && r.ok ? 'autoRunes' : 'autoRunesFailed', { name: page.name || '' });
+    } catch (_) { this._alert('autoRunesFailed'); }
+  }
+
   _scheduleAutoPick() {
     clearTimeout(this._autoPickTimer);
     const cs = this.s.champSelect;
@@ -1094,8 +1112,10 @@ class Engine extends EventEmitter {
       r = await this.lcu.request('POST', `/lol-champ-select/v1/session/actions/${turnId}/complete`);
     }
     log.status = r.status;
-    if (r.status >= 200 && r.status < 300) this._alert('autoPicked', { championId: pick });
-    else this._alert('autoPickFailed');
+    if (r.status >= 200 && r.status < 300) {
+      this._alert('autoPicked', { championId: pick });
+      if ((this.settings.favorites || {}).autoRunes) this._autoRunes(pick, log);
+    } else this._alert('autoPickFailed');
   }
 
   // ---------- runas ----------

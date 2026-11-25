@@ -107,3 +107,6 @@
 - Partidas personalizadas: si el cliente manda vacía la lista de campeones disponibles, el pick automático ya no se queda sin elegir. Si el confirmado directo falla, prueba marcar y confirmar por separado.
 - Herramienta de práctica (sin reloj): con "En el segundo 0" no se elige nada porque no hay 0; con "Apenas me toca" sí.
 - Diagnóstico: guarda cada decisión del pick automático (`autoPick`) y los datos de apodos en ranked (`cellSummoners`).
+
+##  v0.8.10
+- **Runas automáticas con el pick automático** (interruptor nuevo, apagado por defecto): cuando el pick lo hace la app, se aplica la primera página de runas que recomienda el propio cliente de LoL para ese campeón y tu línea. No tiene en cuenta el enfrentamiento. Usa la página temporal del cliente (no gasta tus páginas). Te avisa si se pusieron o si tenés que elegirlas a mano.

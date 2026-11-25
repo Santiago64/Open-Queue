@@ -91,6 +91,8 @@
     else if (a.kind === 'swap') { if (!own('swap')) beep([660, 880, 660]); vibrate([200, 100, 200, 100, 200]); }
     else if (a.kind === 'chat') { own('chat'); vibrate(60); }
     else if (a.kind === 'autoPicked') { if (!own('autoPick')) beep([988, 784]); toast(`${t('autoPicked')}: ${champName(a.championId)}`, 5000); vibrate([200, 80, 200]); }
+    else if (a.kind === 'autoRunes') toast(`${t('autoRunesDone')}${a.name ? ': ' + a.name : ''}`, 4000);
+    else if (a.kind === 'autoRunesFailed') toast(t('autoRunesFailed'), 5000);
     else if (a.kind === 'autoPickFailed') { toast(t('autoPickFailed'), 5000); vibrate([100, 60, 100]); }
     else if (a.kind === 'swapDeclined') { toast(`${t('swapSt_DECLINED')}: ${a.to || ''}`, 3500); vibrate([100, 60, 100]); }
     else if (a.kind === 'invite') { toast(`${t('inviteFrom')} ${a.from || ''}`, 5000); vibrate([100, 60, 100]); }
@@ -580,6 +582,7 @@
       <div class="row" style="margin-top:12px"><span style="flex:1">${t('autoPick')}</span><div class="toggle ${f.autoPick ? 'on' : ''}" data-act="toggleAutoPick"></div></div>
       ${f.autoPick ? `<div class="chips" style="margin-top:8px"><button class="chip ${f.when !== 'start' ? 'on' : ''}" data-act="autoPickWhen" data-v="end">${t('autoPickEnd')}</button><button class="chip ${f.when === 'start' ? 'on' : ''}" data-act="autoPickWhen" data-v="start">${t('autoPickStart')}</button></div>` : ''}
       <p class="note" style="margin-top:4px">${t(f.when === 'start' ? 'autoPickHelpStart' : 'autoPickHelp')}</p>
+      ${f.autoPick ? `<div class="row" style="margin-top:10px"><span style="flex:1">${t('autoRunes')}</span><div class="toggle ${f.autoRunes ? 'on' : ''}" data-act="toggleAutoRunes"></div></div><p class="note" style="margin-top:4px">${t('autoRunesHelp')}</p>` : ''}
       <div class="row" style="margin-top:10px"><span style="flex:1">${t('useHistory')}</span><div class="toggle ${f.useHistory ? 'on' : ''}" data-act="toggleHistory"></div></div>
       <p class="note" style="margin-top:4px">${t('useHistoryHelp')}</p></div>`;
   }
@@ -1101,6 +1104,7 @@
       case 'openFav': openChampSheet('fav', Number(el.getAttribute('data-i'))); break;
       case 'clearFavs': cmd('setFavorites', { ids: [] }); break;
       case 'toggleAutoPick': cmd('setFavorites', { autoPick: !(state.settings.favorites && state.settings.favorites.autoPick) }); break;
+      case 'toggleAutoRunes': cmd('setFavorites', { autoRunes: !(state.settings.favorites && state.settings.favorites.autoRunes) }); break;
       case 'autoPickWhen': cmd('setFavorites', { when: v }); break;
       case 'toggleHistory': cmd('setFavorites', { useHistory: !(state.settings.favorites && state.settings.favorites.useHistory) }); break;
       case 'recHover': request('hover', { championId: Number(el.getAttribute('data-k')) }).then((r) => { if (!(r && r.ok)) toast(failText(r), 3000); }); break;

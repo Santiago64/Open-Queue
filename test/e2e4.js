@@ -145,6 +145,24 @@ const game = (championId, lane, role, win) => ({ gameMode: 'CLASSIC', participan
   mock.setPhase('None'); await sleep(300);
   await ask('setFavorites', { when: 'end' });
 
+  // 5d) Runas automáticas: tras el pick automático se aplica la primera recomendada por el cliente.
+  await ask('setFavorites', { autoPick: true, when: 'end', autoRunes: true });
+  await waitFor(() => state.settings.favorites.autoRunes, 'runas auto');
+  mock.st.pickable = [1, 2, 3, 22, 266, 103];
+  mock.startChampSelect();
+  const nPerk = mock.calls.length;
+  mock.updateSession((s) => {
+    s.actions = [[{ id: 7, actorCellId: 0, type: 'pick', championId: 103, completed: false, isInProgress: true }]];
+    s.timer = { phase: 'BAN_PICK', adjustedTimeLeftInPhase: 1200, totalTimeInPhase: 30000, isInfinite: false };
+  });
+  await waitFor(() => mock.calls.find((c) => c.method === 'PATCH' && /actions\/7$/.test(c.url) && c.body.completed && c.body.championId === 103), 'pick 103');
+  await waitFor(() => alerts.find((a) => a.kind === 'autoRunes'), 'aviso runas', 8000);
+  assert(mock.calls.slice(nPerk).find((c) => c.method === 'GET' && /recommended-pages\/champion\/103\/position\/top/.test(c.url)), 'pide las recomendadas para la línea');
+  assert(mock.calls.slice(nPerk).find((c) => (c.method === 'PUT' || c.method === 'POST') && /^\/lol-perks\/v1\/pages/.test(c.url)), 'aplica la página');
+  ok('runas automáticas: tras el pick automático se pone la recomendada del cliente para ese campeón y línea');
+  mock.setPhase('None'); await sleep(300);
+  await ask('setFavorites', { autoRunes: false });
+
   // 6) Chat en ranked: apodo que da el cliente por celda (en tu idioma), nunca "Aliado N".
   mock.st.chat = [];
   mock.st.cellSummoners = { 1: { cellId: 1, nameVisibilityType: 'HIDDEN', playerAlias: 'Dagarraco Rocoso' } };
