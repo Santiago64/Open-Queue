@@ -195,6 +195,43 @@ const game = (championId, lane, role, win) => ({ gameMode: 'CLASSIC', participan
   mock.st.noTempRec = false;
   await ask('setFavorites', { autoRunes: false, runePageId: 0 });
 
+  // 5f) Reglas: contra Fiora, Malphite (saltear si tienen a Kindred) o Garen. Van antes que el pick preparado y los favoritos.
+  await ask('setFavorites', { autoPick: true, when: 'end', useHistory: false, rules: [
+    { vs: [114, 'x', 114], lane: 'nope', picks: [{ c: 54, avoid: [203] }, { c: 86 }, { c: 54 }] },
+    { vs: [], lane: 'jungle', picks: [{ c: 2 }] },
+  ] });
+  await waitFor(() => (state.settings.favorites.rules || []).length === 2, 'reglas guardadas');
+  assert.deepStrictEqual(state.settings.favorites.rules[0], { vs: [114], lane: '', picks: [{ c: 54, avoid: [203] }, { c: 86, avoid: [] }], off: false });
+  assert.strictEqual(state.settings.favorites.rules[1].lane, 'jungle');
+  ok('reglas: se guardan limpias (sin repetidos ni datos inválidos)');
+
+  mock.st.pickable = [1, 2, 3, 22, 266, 54, 86];
+  await ask('setPrePick', { championId: 3 });
+  const rulePick = async (actionId, enemies) => {
+    mock.startChampSelect();
+    mock.updateSession((s) => {
+      enemies.forEach((c, i) => { s.theirTeam[i].championId = c; });
+      s.actions = [[{ id: actionId, actorCellId: 0, type: 'pick', championId: 3, completed: false, isInProgress: true }]];
+      s.timer = { phase: 'BAN_PICK', adjustedTimeLeftInPhase: 1500, totalTimeInPhase: 30000, isInfinite: false };
+    });
+    await waitFor(() => state.champSelect && state.champSelect.autoPickNext, 'vista previa ' + actionId);
+    const preview = state.champSelect.autoPickNext;
+    const c = await waitFor(() => mock.calls.find((x) => x.method === 'PATCH' && new RegExp('actions/' + actionId + '$').test(x.url) && x.body.completed), 'pick ' + actionId);
+    mock.setPhase('None'); await sleep(300);
+    return { champ: c.body.championId, preview };
+  };
+  let rr = await rulePick(20, [114]);
+  assert.strictEqual(rr.champ, 54, 'Fiora: Malphite'); assert.deepStrictEqual(rr.preview, { championId: 54, rule: 0 });
+  ok('reglas: contra Fiora elige la primera opción de la regla (antes que tu pick preparado marcado por la app)');
+  rr = await rulePick(21, [114, 203]);
+  assert.strictEqual(rr.champ, 86, 'con Kindred saltea Malphite');
+  ok('reglas: si tienen al que te molesta, saltea esa opción y elige la siguiente');
+  rr = await rulePick(22, [99]);
+  assert.strictEqual(rr.champ, 3, 'sin Fiora y sin ser jungla: tu pick preparado');
+  ok('reglas: si ninguna aplica (rival o línea), sigue con tu pick preparado y favoritos');
+  await ask('setPrePick', { championId: null });
+  await ask('setFavorites', { rules: [] });
+
   // 6) Chat en ranked: apodo que da el cliente por celda (en tu idioma), nunca "Aliado N".
   mock.st.chat = [];
   mock.st.cellSummoners = { 1: { cellId: 1, nameVisibilityType: 'HIDDEN', playerAlias: 'Dagarraco Rocoso' } };

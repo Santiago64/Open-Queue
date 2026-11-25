@@ -56,6 +56,21 @@ function histPos(tl) {
   return '';
 }
 
+// Reglas del pick automático, limpias y con topes (para que un pedido raro no rompa nada).
+const LANES = ['top', 'jungle', 'middle', 'bottom', 'utility'];
+function cleanRules(list) {
+  const ids = (a, n) => [...new Set((Array.isArray(a) ? a : []).map(Number).filter((x) => x > 0))].slice(0, n);
+  return (Array.isArray(list) ? list : []).slice(0, 30).map((r) => {
+    r = r || {};
+    const picks = [];
+    (Array.isArray(r.picks) ? r.picks : []).forEach((p) => {
+      const c = Number(p && p.c) || 0;
+      if (c > 0 && !picks.some((x) => x.c === c) && picks.length < 5) picks.push({ c, avoid: ids(p.avoid, 10) });
+    });
+    return { vs: ids(r.vs, 10), lane: LANES.includes(r.lane) ? r.lane : '', picks, off: !!r.off };
+  });
+}
+
 function lcuMessage(r) {
   const d = r && r.data;
   if (!d) return '';
@@ -741,6 +756,7 @@ class Engine extends EventEmitter {
       bannable: prevLists.bannable || [],
       recommend: this._recommendFor((sess.myTeam || []).find((p) => p.cellId === local)),
     };
+    this._previewAutoPick();
     this._scheduleAutoPick();
 
     const turnId = myActive ? myActive.id : null;
@@ -857,6 +873,7 @@ class Engine extends EventEmitter {
     this.s.champSelect.bannable = Array.isArray(b.data) ? b.data : [];
     await this._maybePrepick();
     await this._maybePreban();
+    this._previewAutoPick();
     this._emitState();
   }
 
@@ -952,12 +969,14 @@ class Engine extends EventEmitter {
     if (patch.when === 'start' || patch.when === 'end') f.when = patch.when;
     if (patch.autoRunes !== undefined) f.autoRunes = !!patch.autoRunes;
     if (patch.runePageId !== undefined) f.runePageId = Number(patch.runePageId) || 0;
+    if (Array.isArray(patch.rules)) f.rules = cleanRules(patch.rules);
     this.settings.favorites = f;
     this.store.save();
     if (f.useHistory && this.s.phase === 'ChampSelect') this._loadHistory();
     if (this.s.champSelect) {
       const me = (this.s.champSelect.myTeam || []).find((p) => p.isMe);
       this.s.champSelect.recommend = this._recommendFor(me ? { assignedPosition: me.position } : null);
+      this._previewAutoPick();
       this._scheduleAutoPick();
     }
     this._emitState();
@@ -1042,16 +1061,53 @@ class Engine extends EventEmitter {
     const me = (cs.myTeam || []).find((p) => p.isMe) || {};
     const pos = normPos(me.position);
     const out = [];
-    // 1) lo que tenés marcado ahora, 2) tu pick preparado, 3) tus favoritos, 4) tus mejores según tus partidas.
-    if (cs.myTurn && cs.myTurn.championId) out.push(cs.myTurn.championId);
-    if (me.championId) out.push(me.championId);
-    if (me.intent) out.push(me.intent);
-    if (this.settings.prePick && this.settings.prePick.championId) out.push(this.settings.prePick.championId);
+    const pre = Number(this.settings.prePick && this.settings.prePick.championId) || 0;
+    // 1) lo que marcaste vos a mano, 2) tus reglas (en tu orden), 3) tu pick preparado, 4) tus favoritos, 5) tus mejores según tus partidas.
+    const hover = Number((cs.myTurn && cs.myTurn.championId) || me.championId || me.intent) || 0;
+    if (hover && hover !== pre) out.push(hover); // si lo marcó la app por tu pick preparado, va después de las reglas
+    out.push(...this._rulePicks().map((x) => x.championId));
+    if (hover) out.push(hover);
+    if (pre) out.push(pre);
     let favs = (f.ids || []).slice();
     if (f.useHistory && this._hist) favs = favs.map((c, i) => ({ c, i, s: this._champScore(c, pos) })).sort((a, b) => (b.s - a.s) || (a.i - b.i)).map((x) => x.c);
     out.push(...favs);
     if (f.useHistory) out.push(...(cs.recommend || []).map((x) => x.championId));
     return [...new Set(out.map(Number).filter(Boolean))];
+  }
+
+  // Reglas: "si el rival tiene X (y juego tal línea), elegí A, B o C; salteá A si además tienen Y".
+  // Solo se ven los campeones rivales ya mostrados por el cliente (en draft, los confirmados).
+  _rulePicks() {
+    const cs = this.s.champSelect;
+    const rules = ((this.settings.favorites || {}).rules) || [];
+    if (!cs || !rules.length) return [];
+    const me = (cs.myTeam || []).find((p) => p.isMe) || {};
+    const pos = normPos(me.position);
+    const enemies = new Set((cs.theirTeam || []).map((p) => Number(p.championId)).filter((x) => x > 0));
+    const out = [];
+    rules.forEach((r, i) => {
+      if (!r || r.off) return;
+      if (r.lane && r.lane !== pos) return;
+      if ((r.vs || []).length && !r.vs.some((c) => enemies.has(Number(c)))) return;
+      (r.picks || []).forEach((pk) => {
+        if ((pk.avoid || []).some((c) => enemies.has(Number(c)))) return;
+        out.push({ championId: Number(pk.c), rule: i });
+      });
+    });
+    return out;
+  }
+
+  // Qué elegiría el pick automático ahora mismo (para mostrarlo en el champ select).
+  _previewAutoPick() {
+    const cs = this.s.champSelect;
+    const f = this.settings.favorites || {};
+    if (!cs || !f.autoPick || !cs.myPickAction || cs.myPickAction.completed) { if (cs) cs.autoPickNext = null; return; }
+    const pickable = new Set((cs.pickable || []).map(Number));
+    const taken = new Set([...(cs.myTeam || []), ...(cs.theirTeam || [])].filter((x) => !x.isMe && x.championId).map((x) => Number(x.championId)));
+    const banned = new Set((cs.banned || []).map(Number));
+    const c = this._autoPickCandidates().find((x) => (!pickable.size || pickable.has(x)) && !taken.has(x) && !banned.has(x));
+    const rp = c ? this._rulePicks().find((x) => x.championId === c) : null;
+    cs.autoPickNext = c ? { championId: c, rule: rp ? rp.rule : -1 } : null;
   }
 
   // Runas automáticas: después del pick automático se aplica la primera página recomendada por el propio cliente
@@ -1124,7 +1180,8 @@ class Engine extends EventEmitter {
     const cands = this._autoPickCandidates();
     // Si la lista del cliente viene vacía (pasa en algunas partidas personalizadas) no se descarta a nadie por eso.
     const pick = cands.find((c) => (!pickable.size || pickable.has(c)) && !taken.has(c) && !banned.has(c));
-    const log = { t: Date.now(), when: (this.settings.favorites || {}).when || 'end', turnId, cands, pickableSize: pickable.size, hover: cs.myTurn.championId || 0, prePick: (this.settings.prePick || {}).championId || 0, pick: pick || 0 };
+    const rp = pick ? this._rulePicks().find((x) => x.championId === pick) : null;
+    const log = { rule: rp ? rp.rule : -1, t: Date.now(), when: (this.settings.favorites || {}).when || 'end', turnId, cands, pickableSize: pickable.size, hover: cs.myTurn.championId || 0, prePick: (this.settings.prePick || {}).championId || 0, pick: pick || 0 };
     if (this._diag) (this._diag.autoPick = this._diag.autoPick || []).push(log);
     if (!pick) { this._alert('autoPickFailed'); return; }
     let r = await this.lcu.request('PATCH', `/lol-champ-select/v1/session/actions/${turnId}`, { championId: pick, completed: true });

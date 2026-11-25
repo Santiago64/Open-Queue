@@ -115,3 +115,9 @@
 - **Runas automáticas con las páginas llenas**: en la prueba no se pusieron porque tenías tus 3 páginas ocupadas y el cliente no tenía página temporal. Ahora se le pide al cliente que cree su página temporal recomendada y se usa esa (no toca tus páginas).
 - Si aun así no hay lugar, se puede elegir en la tarjeta de favoritos **qué página puede usar la app** ("Si no hay lugar, usar esta página"). Si no elegís ninguna, avisa que no se pusieron en vez de fallar callado.
 - Diagnóstico: el pick automático guarda cada paso de las runas (`runesSteps`).
+
+##  v0.8.12
+- **Reglas del pick automático** (tarjeta de favoritos > "Reglas del pick automático" > Editar). Cada regla dice: "si el rival tiene alguno de estos campeones" (o vacío = contra cualquiera), "si yo juego tal línea" (opcional) y "elegí en este orden" hasta 5 opciones. Cada opción puede tener "saltear si tienen…" (por ejemplo, Malphite salvo que tengan a Kindred). Podés crear las reglas que quieras (hasta 30), ordenarlas, apagarlas o borrarlas.
+- Orden del pick automático: lo que marcaste a mano, tus reglas (de arriba hacia abajo), tu pick preparado, tus favoritos y tus mejores según tus partidas.
+- En el champ select se muestra qué elegiría el pick automático en ese momento y por qué regla ("Si no elegís: Malphite · Regla 1").
+- Límite: solo se ven los rivales que el cliente ya muestra (en draft, los confirmados) y el cliente no dice en qué línea va cada rival.

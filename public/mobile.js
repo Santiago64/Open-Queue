@@ -585,6 +585,7 @@
       <p class="note" style="margin-top:4px">${t(f.when === 'start' ? 'autoPickHelpStart' : 'autoPickHelp')}</p>
       ${f.autoPick ? `<div class="row" style="margin-top:10px"><span style="flex:1">${t('autoRunes')}</span><div class="toggle ${f.autoRunes ? 'on' : ''}" data-act="toggleAutoRunes"></div></div><p class="note" style="margin-top:4px">${t('autoRunesHelp')}</p>
       ${f.autoRunes ? `<div class="dim" style="font-size:12px;margin:8px 0 4px">${t('autoRunesPage')}</div><select id="autoRunesPage" style="width:100%"><option value="0">${t('autoRunesPageNone')}</option>${((state.runes && state.runes.pages) || []).filter((p) => !p.temp).map((p) => `<option value="${p.id}" ${Number(f.runePageId) === p.id ? 'selected' : ''}>${esc(p.name)}</option>`).join('')}</select><p class="note" style="margin-top:4px">${t('autoRunesPageHelp')}</p>` : ''}` : ''}
+      ${f.autoPick ? `<div class="row" style="margin-top:12px"><span style="flex:1">${t('rulesTitle')} <small class="dim">(${(f.rules || []).filter((r) => !r.off).length})</small></span><button class="btn small" data-act="openRules">${t('rulesEdit')}</button></div><p class="note" style="margin-top:4px">${t('rulesHelp')}</p>` : ''}
       <div class="row" style="margin-top:10px"><span style="flex:1">${t('useHistory')}</span><div class="toggle ${f.useHistory ? 'on' : ''}" data-act="toggleHistory"></div></div>
       <p class="note" style="margin-top:4px">${t('useHistoryHelp')}</p></div>`;
   }
@@ -601,7 +602,11 @@
         return `<button class="pill" style="flex:1;flex-direction:column;padding:6px;min-width:0" data-act="recHover" data-k="${x.championId}">${champImg(x.championId)}<span style="font-size:11px">${g ? `${w}V ${g - w}D` : t('recMastery')}</span></button>`;
       }).join('')}</div></div>`;
     }
-    if (f.autoPick && pickOpen) h += `<p class="note" style="margin:0 0 10px">${t(f.when === 'start' ? 'autoPickOnStart' : 'autoPickOn')}</p>`;
+    if (f.autoPick && pickOpen) {
+      const nx = cs.autoPickNext;
+      const next = nx ? ` <span class="chwho" style="margin:0 0 0 4px;opacity:1">${champImg(nx.championId)}<span>${esc(champName(nx.championId))}${nx.rule >= 0 ? ' · ' + t('ruleN') + ' ' + (nx.rule + 1) : ''}</span></span>` : '';
+      h += `<div class="note" style="margin:0 0 10px">${t(f.when === 'start' ? 'autoPickOnStart' : 'autoPickOn')}${next ? '<br>' + t('autoPickNext') + next : ''}</div>`; // div: adentro va un ícono (div)
+    }
     return h;
   }
 
@@ -663,7 +668,7 @@
       if (own && own.length) { const ok = new Set(own); S.champions.forEach((c) => { if (!ok.has(c.key)) d.add(c.key); }); }
       return d;
     }
-    if (!cs || sheet.mode === 'prepick' || sheet.mode === 'preban' || sheet.mode === 'fav') return d;
+    if (!cs || sheet.mode === 'prepick' || sheet.mode === 'preban' || sheet.mode === 'fav' || sheet.mode === 'rule') return d;
     bannedKeys().forEach((b) => d.add(b));
     const isBan = sheet.mode === 'turn' && cs.myTurn && cs.myTurn.type === 'ban';
     if (!isBan) {
@@ -683,6 +688,14 @@
   }
 
   function openChampSheet(mode, qi) {
+    $('sheetChamp').style.zIndex = mode === 'rule' ? '30' : ''; // las reglas abren el selector encima del editor
+    if (mode === 'rule') {
+      sheet.mode = 'rule'; sheet.rt = qi; sheet.champ = null; sheet.search = ''; sheet.cls = '';
+      $('scSearch').value = '';
+      $('sheetChamp').classList.remove('hidden');
+      renderSheets();
+      return;
+    }
     if (mode === 'fav') {
       sheet.mode = 'fav'; sheet.qi = qi;
       const f = (state.settings.favorites && state.settings.favorites.ids) || [];
@@ -725,7 +738,7 @@
 
     if (sheet.mode === 'qslot' && !(state && state.lobby && state.lobby.quickPlay)) { closeSheets(); return; }
     const isBan = sheet.mode === 'turn' && cs && cs.myTurn && cs.myTurn.type === 'ban';
-    $('scTitle').textContent = sheet.mode === 'fav' ? `${t('favorites')} ${sheet.qi + 1}` : sheet.mode === 'prepick' ? t('prePick') : sheet.mode === 'preban' ? t('preBan') : isBan ? t('chooseBan') : t('chooseChamp');
+    $('scTitle').textContent = sheet.mode === 'rule' ? t(sheet.rt.kind === 'pick' ? 'ruleAddPick' : sheet.rt.kind === 'avoid' ? 'ruleAddAvoid' : 'ruleAddVs') : sheet.mode === 'fav' ? `${t('favorites')} ${sheet.qi + 1}` : sheet.mode === 'prepick' ? t('prePick') : sheet.mode === 'preban' ? t('preBan') : isBan ? t('chooseBan') : t('chooseChamp');
     $('scNoData').textContent = S.ok ? '' : t('noData');
 
     const classes = ['Fighter', 'Tank', 'Mage', 'Assassin', 'Marksman', 'Support'];
@@ -747,7 +760,7 @@
     if (gridEl._h !== gridHtml) { gridEl.innerHTML = gridHtml; gridEl._h = gridHtml; }
 
     const btn = $('scConfirm');
-    if (sheet.mode === 'prepick' || sheet.mode === 'preban' || sheet.mode === 'qslot' || sheet.mode === 'fav') { btn.textContent = t('confirm'); btn.disabled = !sheet.champ; }
+    if (sheet.mode === 'prepick' || sheet.mode === 'preban' || sheet.mode === 'qslot' || sheet.mode === 'fav' || sheet.mode === 'rule') { btn.textContent = t('confirm'); btn.disabled = !sheet.champ; }
     else if (sheet.mode === 'turn') { btn.textContent = isBan ? t('confirmBan') : t('confirmPick'); btn.disabled = !sheet.champ; }
     else { btn.textContent = t('confirm'); btn.disabled = false; }
   }
@@ -788,6 +801,48 @@
     }
     $('sheetList').classList.remove('hidden');
   }
+
+  // ===== Reglas del pick automático =====
+  let RULES = [];
+  function saveRules() { cmd('setFavorites', { rules: RULES }); renderRules(); }
+  function openRules() {
+    RULES = JSON.parse(JSON.stringify((state.settings.favorites && state.settings.favorites.rules) || []));
+    $('slTitle').textContent = t('rulesTitle');
+    renderRules();
+    $('sheetList').classList.remove('hidden');
+  }
+  function chipChamp(k, act, attrs) {
+    return `<span class="pill" style="padding:4px 6px;gap:6px">${champImg(k, 'sm')}<span style="font-size:12px">${esc(champName(k))}</span><button class="iconbtn" style="width:26px;height:26px;font-size:12px" data-act="${act}" ${attrs}>&#10005;</button></span>`;
+  }
+  function renderRules() {
+    const lanes = ['', 'top', 'jungle', 'middle', 'bottom', 'utility'];
+    const cards = RULES.map((r, i) => `<div class="card" style="${r.off ? 'opacity:.55' : ''}">
+      <div class="row" style="gap:6px"><h2 style="flex:1;margin:0">${t('ruleN')} ${i + 1}</h2>
+        <div class="toggle ${r.off ? '' : 'on'}" data-act="ruleToggle" data-i="${i}"></div>
+        <button class="btn small" data-act="ruleMove" data-i="${i}" data-v="-1" ${i === 0 ? 'disabled' : ''}>&uarr;</button>
+        <button class="btn small" data-act="ruleMove" data-i="${i}" data-v="1" ${i === RULES.length - 1 ? 'disabled' : ''}>&darr;</button>
+        <button class="btn small" data-act="ruleDel" data-i="${i}">&#128465;</button></div>
+      <div class="dim" style="font-size:12px;margin:10px 0 6px">${t('ruleVs')}</div>
+      <div class="row wrap" style="gap:6px">${r.vs.map((k) => chipChamp(k, 'ruleVsDel', `data-i="${i}" data-k="${k}"`)).join('')}<button class="btn small" data-act="ruleAdd" data-kind="vs" data-i="${i}">+ ${t('ruleChamp')}</button></div>
+      ${r.vs.length ? '' : `<p class="note" style="margin:4px 0 0">${t('ruleVsEmpty')}</p>`}
+      <div class="dim" style="font-size:12px;margin:10px 0 6px">${t('ruleLane')}</div>
+      <select data-rule-lane="${i}">${lanes.map((l) => `<option value="${l}" ${r.lane === l ? 'selected' : ''}>${l ? esc(POS[OQ.lang][l]) : t('ruleAnyLane')}</option>`).join('')}</select>
+      <div class="dim" style="font-size:12px;margin:10px 0 6px">${t('rulePicks')}</div>
+      ${r.picks.map((p, j) => `<div style="border:1px solid var(--line);padding:8px;margin-bottom:6px">
+        <div class="row" style="gap:6px">${champImg(p.c, 'sm')}<b style="flex:1">${j + 1}. ${esc(champName(p.c))}</b>
+          <button class="btn small" data-act="rulePickMove" data-i="${i}" data-j="${j}" data-v="-1" ${j === 0 ? 'disabled' : ''}>&uarr;</button>
+          <button class="btn small" data-act="rulePickMove" data-i="${i}" data-j="${j}" data-v="1" ${j === r.picks.length - 1 ? 'disabled' : ''}>&darr;</button>
+          <button class="btn small" data-act="rulePickDel" data-i="${i}" data-j="${j}">&#10005;</button></div>
+        <div class="row wrap" style="gap:6px;margin-top:6px;align-items:center"><small class="dim">${t('ruleAvoid')}</small>${p.avoid.map((k) => chipChamp(k, 'ruleAvoidDel', `data-i="${i}" data-j="${j}" data-k="${k}"`)).join('')}<button class="btn small" data-act="ruleAdd" data-kind="avoid" data-i="${i}" data-j="${j}">+</button></div></div>`).join('')}
+      ${r.picks.length < 5 ? `<button class="btn small" data-act="ruleAdd" data-kind="pick" data-i="${i}">+ ${t('ruleAddPick')}</button>` : ''}</div>`).join('');
+    $('slBody').innerHTML = `<p class="note" style="margin:0 0 10px">${t('rulesIntro')}</p>${cards || `<p class="dim">${t('rulesNone')}</p>`}
+      <button class="btn block primary" data-act="ruleNew" ${RULES.length >= 30 ? 'disabled' : ''}>+ ${t('ruleNew')}</button>
+      <p class="note" style="margin-top:12px">${t('rulesLimits')}</p>`;
+  }
+  document.addEventListener('change', (e) => {
+    const li = e.target && e.target.getAttribute && e.target.getAttribute('data-rule-lane');
+    if (li !== null && li !== undefined && RULES[Number(li)]) { RULES[Number(li)].lane = e.target.value; saveRules(); }
+  });
 
   // ===== Runas =====
   const RU = { tab: 'mine', data: null, loading: false, custom: null, slot: null };
@@ -1093,7 +1148,9 @@
       case 'accept': cmd('accept'); break;
       case 'decline': cmd('decline'); break;
       case 'openChamp': openChampSheet(el.getAttribute('data-mode')); break;
-      case 'closeSheet': closeSheets(); break;
+      case 'closeSheet':
+        if (sheet.mode === 'rule' && el.closest('#sheetChamp')) { $('sheetChamp').classList.add('hidden'); $('sheetChamp').style.zIndex = ''; sheet.mode = null; break; } // vuelve al editor de reglas
+        closeSheets(); break;
       case 'cls': sheet.cls = v; renderSheets(); break;
       case 'pickCell': {
         const k = Number(el.getAttribute('data-k'));
@@ -1107,6 +1164,16 @@
       case 'openFav': openChampSheet('fav', Number(el.getAttribute('data-i'))); break;
       case 'clearFavs': cmd('setFavorites', { ids: [] }); break;
       case 'toggleAutoPick': cmd('setFavorites', { autoPick: !(state.settings.favorites && state.settings.favorites.autoPick) }); break;
+      case 'openRules': openRules(); break;
+      case 'ruleNew': RULES.push({ vs: [], lane: '', picks: [], off: false }); saveRules(); break;
+      case 'ruleToggle': { const r = RULES[Number(el.getAttribute('data-i'))]; if (r) { r.off = !r.off; saveRules(); } break; }
+      case 'ruleDel': if (confirm(t('ruleDelConfirm'))) { RULES.splice(Number(el.getAttribute('data-i')), 1); saveRules(); } break;
+      case 'ruleMove': { const i = Number(el.getAttribute('data-i')); const j = i + Number(v); if (RULES[j]) { [RULES[i], RULES[j]] = [RULES[j], RULES[i]]; saveRules(); } break; }
+      case 'ruleAdd': openChampSheet('rule', { ri: Number(el.getAttribute('data-i')), kind: el.getAttribute('data-kind'), pi: Number(el.getAttribute('data-j')) }); break;
+      case 'ruleVsDel': { const r = RULES[Number(el.getAttribute('data-i'))]; if (r) { r.vs = r.vs.filter((k) => k !== Number(el.getAttribute('data-k'))); saveRules(); } break; }
+      case 'rulePickDel': { const r = RULES[Number(el.getAttribute('data-i'))]; if (r) { r.picks.splice(Number(el.getAttribute('data-j')), 1); saveRules(); } break; }
+      case 'rulePickMove': { const r = RULES[Number(el.getAttribute('data-i'))]; const a = Number(el.getAttribute('data-j')); const b = a + Number(v); if (r && r.picks[b]) { [r.picks[a], r.picks[b]] = [r.picks[b], r.picks[a]]; saveRules(); } break; }
+      case 'ruleAvoidDel': { const r = RULES[Number(el.getAttribute('data-i'))]; const p = r && r.picks[Number(el.getAttribute('data-j'))]; if (p) { p.avoid = p.avoid.filter((k) => k !== Number(el.getAttribute('data-k'))); saveRules(); } break; }
       case 'toggleAutoRunes': cmd('setFavorites', { autoRunes: !(state.settings.favorites && state.settings.favorites.autoRunes) }); break;
       case 'autoPickWhen': cmd('setFavorites', { when: v }); break;
       case 'toggleHistory': cmd('setFavorites', { useHistory: !(state.settings.favorites && state.settings.favorites.useHistory) }); break;
@@ -1248,7 +1315,17 @@
     if (sheet.mode === 'prepick') cmd('setPrePick', { championId: sheet.champ });
     else if (sheet.mode === 'preban') cmd('setPreBan', { championId: sheet.champ });
     else if (sheet.mode === 'qslot') slotCmd({ index: sheet.qi, patch: { championId: sheet.champ } });
-    else if (sheet.mode === 'fav') {
+    else if (sheet.mode === 'rule') {
+      const rt = sheet.rt; const r = RULES[rt.ri]; const k = Number(sheet.champ);
+      if (r && k) {
+        if (rt.kind === 'vs') { if (!r.vs.includes(k)) r.vs.push(k); }
+        else if (rt.kind === 'pick') { if (!r.picks.some((p) => p.c === k)) r.picks.push({ c: k, avoid: [] }); }
+        else if (rt.kind === 'avoid' && r.picks[rt.pi]) { if (!r.picks[rt.pi].avoid.includes(k)) r.picks[rt.pi].avoid.push(k); }
+        saveRules();
+      }
+      $('sheetChamp').classList.add('hidden'); $('sheetChamp').style.zIndex = ''; sheet.mode = null;
+      return;
+    } else if (sheet.mode === 'fav') {
       const ids = ((state.settings.favorites && state.settings.favorites.ids) || []).slice(0, 3);
       const other = ids.indexOf(sheet.champ);
       if (other >= 0 && other !== sheet.qi) ids[other] = ids[sheet.qi] || 0; // si ya estaba en otro lugar, se intercambian
