@@ -110,3 +110,8 @@
 
 ##  v0.8.10
 - **Runas automáticas con el pick automático** (interruptor nuevo, apagado por defecto): cuando el pick lo hace la app, se aplica la primera página de runas que recomienda el propio cliente de LoL para ese campeón y tu línea. No tiene en cuenta el enfrentamiento. Usa la página temporal del cliente (no gasta tus páginas). Te avisa si se pusieron o si tenés que elegirlas a mano.
+
+##  v0.8.11
+- **Runas automáticas con las páginas llenas**: en la prueba no se pusieron porque tenías tus 3 páginas ocupadas y el cliente no tenía página temporal. Ahora se le pide al cliente que cree su página temporal recomendada y se usa esa (no toca tus páginas).
+- Si aun así no hay lugar, se puede elegir en la tarjeta de favoritos **qué página puede usar la app** ("Si no hay lugar, usar esta página"). Si no elegís ninguna, avisa que no se pusieron en vez de fallar callado.
+- Diagnóstico: el pick automático guarda cada paso de las runas (`runesSteps`).

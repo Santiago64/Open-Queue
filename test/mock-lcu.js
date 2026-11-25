@@ -69,6 +69,7 @@ async function startMock() {
       if (key === 'GET /lol-perks/v1/inventory') { const n = st.pages.filter((x) => !x.isTemporary).length; return ok({ canAddCustomPage: n < 3, customPageCount: n, ownedPageCount: 3 }); }
       if ((m = /^POST \/lol-perks\/v1\/recommended-pages-position\/champion\/(\d+)\/position\/(\w+)$/.exec(key))) {
         if (Number(m[1]) !== 103) return ok({ message: 'no recommendations' }, 404);
+        if (st.noTempRec) return ok({ message: 'failed' }, 500);
         [0, 1, 2].forEach((i) => st.pages.push({ id: 900 + i, name: 'Ahri - Rec ' + (i + 1), isEditable: true, isValid: true, isTemporary: true, recommendationChampionId: 103, recommendationIndex: i, primaryStyleId: 8000, subStyleId: 8100, selectedPerkIds: [8005 + i, 9111, 9104, 8014, 8126, 8136, 5008, 5008, 5011] }));
         return ok(undefined, 204);
       }

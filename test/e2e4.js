@@ -163,6 +163,38 @@ const game = (championId, lane, role, win) => ({ gameMode: 'CLASSIC', participan
   mock.setPhase('None'); await sleep(300);
   await ask('setFavorites', { autoRunes: false });
 
+  // 5e) Runas automáticas con tus 3 páginas llenas y sin página temporal (lo que pasó en la prueba real).
+  const fullPages = () => [10, 11, 12].map((pid) => ({ id: pid, name: 'Mia ' + pid, isEditable: true, isValid: true, isTemporary: false, primaryStyleId: 8100, subStyleId: 8200, selectedPerkIds: [8112, 8126, 8139, 8135, 8005, 9111, 5008, 5008, 5001] }));
+  mock.st.pages = fullPages();
+  const runPick = async (actionId) => {
+    alerts.length = 0;
+    mock.startChampSelect();
+    mock.updateSession((s) => {
+      s.actions = [[{ id: actionId, actorCellId: 0, type: 'pick', championId: 103, completed: false, isInProgress: true }]];
+      s.timer = { phase: 'BAN_PICK', adjustedTimeLeftInPhase: 1000, totalTimeInPhase: 30000, isInfinite: false };
+    });
+    await waitFor(() => alerts.find((a) => /^autoRunes/.test(a.kind)), 'aviso runas ' + actionId, 10000);
+    mock.setPhase('None'); await sleep(300);
+    return alerts.find((a) => /^autoRunes/.test(a.kind)).kind;
+  };
+  await ask('setFavorites', { autoRunes: true, runePageId: 0 });
+  assert.strictEqual(await runPick(8), 'autoRunes');
+  const tmp = mock.st.pages.find((x) => x.isTemporary && x.id === mock.st.currentPage);
+  assert(tmp, 'queda activa la página temporal del cliente');
+  assert.deepStrictEqual(mock.st.pages.filter((x) => !x.isTemporary).map((x) => x.name), ['Mia 10', 'Mia 11', 'Mia 12'], 'no toca tus páginas');
+  ok('runas automáticas con páginas llenas: el cliente crea su página temporal y se usa esa, sin tocar las tuyas');
+
+  mock.st.pages = fullPages(); mock.st.noTempRec = true;
+  assert.strictEqual(await runPick(9), 'autoRunesNoSlot');
+  assert.deepStrictEqual(mock.st.pages.map((x) => x.selectedPerkIds[0]), [8112, 8112, 8112], 'sin permiso no pisa nada');
+  await ask('setFavorites', { runePageId: 11 });
+  assert.strictEqual(await runPick(10), 'autoRunes');
+  assert.strictEqual(mock.st.currentPage, 11); assert.notStrictEqual(mock.st.pages.find((x) => x.id === 11).selectedPerkIds[0], 8112);
+  assert.strictEqual(mock.st.pages.find((x) => x.id === 11).name, 'Mia 11');
+  ok('runas automáticas sin lugar: avisa; si elegiste una página para la app, se guardan ahí');
+  mock.st.noTempRec = false;
+  await ask('setFavorites', { autoRunes: false, runePageId: 0 });
+
   // 6) Chat en ranked: apodo que da el cliente por celda (en tu idioma), nunca "Aliado N".
   mock.st.chat = [];
   mock.st.cellSummoners = { 1: { cellId: 1, nameVisibilityType: 'HIDDEN', playerAlias: 'Dagarraco Rocoso' } };

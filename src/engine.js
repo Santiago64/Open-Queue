@@ -951,6 +951,7 @@ class Engine extends EventEmitter {
     if (patch.useHistory !== undefined) f.useHistory = !!patch.useHistory;
     if (patch.when === 'start' || patch.when === 'end') f.when = patch.when;
     if (patch.autoRunes !== undefined) f.autoRunes = !!patch.autoRunes;
+    if (patch.runePageId !== undefined) f.runePageId = Number(patch.runePageId) || 0;
     this.settings.favorites = f;
     this.store.save();
     if (f.useHistory && this.s.phase === 'ChampSelect') this._loadHistory();
@@ -1064,8 +1065,29 @@ class Engine extends EventEmitter {
       const page = d && d.ok && d.recommended && d.recommended[0];
       if (log) log.runes = page ? { name: page.name, primary: page.primaryStyleId } : 'none';
       if (!page) { this._alert('autoRunesFailed'); return; }
-      const r = await this.useRunes(page, championId);
+      const pos = normPos(me.position) || 'none';
+      let r = await this.useRunes(page, championId);
+      if (log) log.runesSteps = [['use', r && (r.ok ? 'ok' : r.error)]];
+      if (r && r.error === 'full') {
+        // Sin página temporal y con tus páginas llenas: se le pide al cliente que cree su página temporal recomendada (como hace él al elegir una recomendada).
+        const rq = await this.lcu.request('POST', `/lol-perks/v1/recommended-pages-position/champion/${Number(championId)}/position/${pos}`);
+        let temp = null;
+        for (let i = 0; i < 5 && !temp && rq.status < 300; i++) {
+          await new Promise((res) => setTimeout(res, 400));
+          await this._refreshRunes();
+          temp = this.s.runes.pages.find((p) => p.temp);
+        }
+        if (log) log.runesSteps.push(['temp', rq.status, !!temp]);
+        if (temp) { r = await this.useRunes(page, championId); if (log) log.runesSteps.push(['use2', r && (r.ok ? 'ok' : r.error)]); }
+      }
+      const spare = Number((this.settings.favorites || {}).runePageId) || 0;
+      if (r && r.error === 'full' && spare) {
+        // La página que elegiste en Ajustes para que la app pueda usar cuando no hay lugar.
+        r = await this.saveRunes(page, spare);
+        if (log) log.runesSteps.push(['spare', r && (r.ok ? 'ok' : r.error)]);
+      }
       if (log) log.runesOk = !!(r && r.ok);
+      if (r && r.error === 'full') { this._alert('autoRunesNoSlot'); return; }
       this._alert(r && r.ok ? 'autoRunes' : 'autoRunesFailed', { name: page.name || '' });
     } catch (_) { this._alert('autoRunesFailed'); }
   }
