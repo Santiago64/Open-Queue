@@ -35,6 +35,7 @@ const NOISY_URIS = ['/lol-chat', '/riotclient', '/lol-patch', '/data-store', '/l
   '/lol-career', '/lol-account', '/lol-lcds', '/lol-player', '/lol-event', '/lol-pft', '/lol-yourshop', '/lol-vanguard'];
 
 const AUTO_PICK_MARGIN_MS = 700; // pick automático: cuánto antes del 0 se manda
+const AUTO_PICK_START_DELAY_MS = 1500; // modo "apenas te toca": espera para que se marque tu pick preparado
 
 // Línea del champ select ('top', 'jungle', 'middle', 'bottom', 'utility').
 function normPos(p) {
@@ -360,7 +361,7 @@ class Engine extends EventEmitter {
     if (!chatWanted(p) && chatWanted(prev)) this._stopChat();
     if (p === 'ChampSelect' && prev !== 'ChampSelect') {
       this._prepickDone = false; this._prepickTries = 0;
-      this._autoPickTurn = null;
+      this._autoPickTurn = null; this._autoPickStartFor = null;
       this._loadHistory();
       this._lastMyTurnId = null;
       this._userBanChoice = null;
@@ -948,6 +949,7 @@ class Engine extends EventEmitter {
     if (Array.isArray(patch.ids)) f.ids = [...new Set(patch.ids.map(Number).filter((x) => x > 0))].slice(0, 3);
     if (patch.autoPick !== undefined) f.autoPick = !!patch.autoPick;
     if (patch.useHistory !== undefined) f.useHistory = !!patch.useHistory;
+    if (patch.when === 'start' || patch.when === 'end') f.when = patch.when;
     this.settings.favorites = f;
     this.store.save();
     if (f.useHistory && this.s.phase === 'ChampSelect') this._loadHistory();
@@ -1038,7 +1040,11 @@ class Engine extends EventEmitter {
     const me = (cs.myTeam || []).find((p) => p.isMe) || {};
     const pos = normPos(me.position);
     const out = [];
+    // 1) lo que tenés marcado ahora, 2) tu pick preparado, 3) tus favoritos, 4) tus mejores según tus partidas.
     if (cs.myTurn && cs.myTurn.championId) out.push(cs.myTurn.championId);
+    if (me.championId) out.push(me.championId);
+    if (me.intent) out.push(me.intent);
+    if (this.settings.prePick && this.settings.prePick.championId) out.push(this.settings.prePick.championId);
     let favs = (f.ids || []).slice();
     if (f.useHistory && this._hist) favs = favs.map((c, i) => ({ c, i, s: this._champScore(c, pos) })).sort((a, b) => (b.s - a.s) || (a.i - b.i)).map((x) => x.c);
     out.push(...favs);
@@ -1050,11 +1056,20 @@ class Engine extends EventEmitter {
     clearTimeout(this._autoPickTimer);
     const cs = this.s.champSelect;
     const f = this.settings.favorites || {};
-    if (!cs || !f.autoPick || !cs.myTurn || cs.myTurn.type !== 'pick' || cs.benchEnabled || cs.isInfinite || cs.timeLeftMs == null) return;
+    if (!cs || !f.autoPick || !cs.myTurn || cs.myTurn.type !== 'pick' || cs.benchEnabled) return;
     if (this._autoPickTurn === cs.myTurn.id) return;
     const turnId = cs.myTurn.id;
-    // Se dispara en el último segundo (cuando el reloj llega a 0), con un pequeño margen para que el cliente lo reciba a tiempo.
-    const wait = Math.max(0, cs.timeLeftMs - (cs.at ? Date.now() - cs.at : 0) - AUTO_PICK_MARGIN_MS);
+    let wait;
+    if (f.when === 'start') {
+      // Apenas te toca: se espera un instante para que llegue tu pick preparado (si tenés uno) y se confirma.
+      if (this._autoPickStartFor !== turnId) { this._autoPickStartFor = turnId; this._autoPickStartAt = Date.now() + AUTO_PICK_START_DELAY_MS; }
+      wait = Math.max(0, this._autoPickStartAt - Date.now());
+    } else {
+      // Sin reloj (por ejemplo la herramienta de práctica) no hay "segundo 0": no se elige nada.
+      if (cs.isInfinite || cs.timeLeftMs == null) return;
+      // Se dispara en el último segundo (cuando el reloj llega a 0), con un pequeño margen para que el cliente lo reciba a tiempo.
+      wait = Math.max(0, cs.timeLeftMs - (cs.at ? Date.now() - cs.at : 0) - AUTO_PICK_MARGIN_MS);
+    }
     this._autoPickTimer = setTimeout(() => this._autoPick(turnId), wait);
   }
 
@@ -1066,9 +1081,19 @@ class Engine extends EventEmitter {
     const pickable = new Set(Array.isArray(p.data) && p.data.length ? p.data.map(Number) : (cs.pickable || []).map(Number));
     const taken = new Set([...(cs.myTeam || []), ...(cs.theirTeam || [])].filter((x) => !x.isMe && x.championId).map((x) => Number(x.championId)));
     const banned = new Set((cs.banned || []).map(Number));
-    const pick = this._autoPickCandidates().find((c) => pickable.has(c) && !taken.has(c) && !banned.has(c));
+    const cands = this._autoPickCandidates();
+    // Si la lista del cliente viene vacía (pasa en algunas partidas personalizadas) no se descarta a nadie por eso.
+    const pick = cands.find((c) => (!pickable.size || pickable.has(c)) && !taken.has(c) && !banned.has(c));
+    const log = { t: Date.now(), when: (this.settings.favorites || {}).when || 'end', turnId, cands, pickableSize: pickable.size, hover: cs.myTurn.championId || 0, prePick: (this.settings.prePick || {}).championId || 0, pick: pick || 0 };
+    if (this._diag) (this._diag.autoPick = this._diag.autoPick || []).push(log);
     if (!pick) { this._alert('autoPickFailed'); return; }
-    const r = await this.lcu.request('PATCH', `/lol-champ-select/v1/session/actions/${turnId}`, { championId: pick, completed: true });
+    let r = await this.lcu.request('PATCH', `/lol-champ-select/v1/session/actions/${turnId}`, { championId: pick, completed: true });
+    if (r.status >= 300) {
+      // Otra forma que aceptan algunos clientes: marcar y después confirmar.
+      await this.lcu.request('PATCH', `/lol-champ-select/v1/session/actions/${turnId}`, { championId: pick });
+      r = await this.lcu.request('POST', `/lol-champ-select/v1/session/actions/${turnId}/complete`);
+    }
+    log.status = r.status;
     if (r.status >= 200 && r.status < 300) this._alert('autoPicked', { championId: pick });
     else this._alert('autoPickFailed');
   }
@@ -1466,6 +1491,9 @@ class Engine extends EventEmitter {
       cosmeticsTrail: d.cosmeticsTrail || null,
       cosmeticsSet: d.cosmeticsSet || null,
       chatParticipants: d.chatParticipants || null,
+      autoPick: d.autoPick || null,
+      history: d.history || null,
+      cellSummoners: d.cellSummoners || null,
       helpSwap,
       dominationSlots: styleDump,
       events: d.events,

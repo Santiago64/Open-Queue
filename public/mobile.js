@@ -578,7 +578,8 @@
       <div class="row" style="gap:8px">${slots}</div>
       ${ids.length ? `<button class="btn small" style="margin-top:8px" data-act="clearFavs">${t('favClear')}</button>` : ''}
       <div class="row" style="margin-top:12px"><span style="flex:1">${t('autoPick')}</span><div class="toggle ${f.autoPick ? 'on' : ''}" data-act="toggleAutoPick"></div></div>
-      <p class="note" style="margin-top:4px">${t('autoPickHelp')}</p>
+      ${f.autoPick ? `<div class="chips" style="margin-top:8px"><button class="chip ${f.when !== 'start' ? 'on' : ''}" data-act="autoPickWhen" data-v="end">${t('autoPickEnd')}</button><button class="chip ${f.when === 'start' ? 'on' : ''}" data-act="autoPickWhen" data-v="start">${t('autoPickStart')}</button></div>` : ''}
+      <p class="note" style="margin-top:4px">${t(f.when === 'start' ? 'autoPickHelpStart' : 'autoPickHelp')}</p>
       <div class="row" style="margin-top:10px"><span style="flex:1">${t('useHistory')}</span><div class="toggle ${f.useHistory ? 'on' : ''}" data-act="toggleHistory"></div></div>
       <p class="note" style="margin-top:4px">${t('useHistoryHelp')}</p></div>`;
   }
@@ -595,7 +596,7 @@
         return `<button class="pill" style="flex:1;flex-direction:column;padding:6px;min-width:0" data-act="recHover" data-k="${x.championId}">${champImg(x.championId)}<span style="font-size:11px">${g ? `${w}V ${g - w}D` : t('recMastery')}</span></button>`;
       }).join('')}</div></div>`;
     }
-    if (f.autoPick && pickOpen && (f.ids || []).length) h += `<p class="note" style="margin:0 0 10px">${t('autoPickOn')}</p>`;
+    if (f.autoPick && pickOpen) h += `<p class="note" style="margin:0 0 10px">${t(f.when === 'start' ? 'autoPickOnStart' : 'autoPickOn')}</p>`;
     return h;
   }
 
@@ -1100,6 +1101,7 @@
       case 'openFav': openChampSheet('fav', Number(el.getAttribute('data-i'))); break;
       case 'clearFavs': cmd('setFavorites', { ids: [] }); break;
       case 'toggleAutoPick': cmd('setFavorites', { autoPick: !(state.settings.favorites && state.settings.favorites.autoPick) }); break;
+      case 'autoPickWhen': cmd('setFavorites', { when: v }); break;
       case 'toggleHistory': cmd('setFavorites', { useHistory: !(state.settings.favorites && state.settings.favorites.useHistory) }); break;
       case 'recHover': request('hover', { championId: Number(el.getAttribute('data-k')) }).then((r) => { if (!(r && r.ok)) toast(failText(r), 3000); }); break;
       case 'clearPre': cmd('setPrePick', { championId: null }); break;

@@ -100,3 +100,10 @@
 - **Fondo con GIF**: el fondo propio ahora acepta GIFs animados (hasta 8 MB). El fondo y los sonidos se guardan en el celu en IndexedDB; los que ya tenías se pasan solos.
 - **Chat en ranked**: se busca el apodo anónimo del cliente (por ejemplo "Dagarraco Rocoso") también en los datos de cada jugador del champ select y en los participantes del chat, en vez de "Aliado N". Junto al nombre se ve solo el ícono del campeón y la línea (sin el nombre del campeón).
 
+
+##  v0.8.9
+- **Pick automático: cuándo se elige**. Nueva opción "En el segundo 0" (como antes) o "Apenas me toca" (se confirma al empezar tu turno).
+- **Pick automático respeta tu pick preparado**: el orden es lo que tengas marcado, tu pick preparado y después tus favoritos. Antes, si el cliente no mostraba la marca a tiempo, podía elegir un favorito en su lugar.
+- Partidas personalizadas: si el cliente manda vacía la lista de campeones disponibles, el pick automático ya no se queda sin elegir. Si el confirmado directo falla, prueba marcar y confirmar por separado.
+- Herramienta de práctica (sin reloj): con "En el segundo 0" no se elige nada porque no hay 0; con "Apenas me toca" sí.
+- Diagnóstico: guarda cada decisión del pick automático (`autoPick`) y los datos de apodos en ranked (`cellSummoners`).

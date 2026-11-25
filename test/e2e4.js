@@ -113,6 +113,38 @@ const game = (championId, lane, role, win) => ({ gameMode: 'CLASSIC', participan
   ok('pick automático apagado: no elige nada');
   mock.setPhase('None'); await sleep(300);
 
+  // 5b) Pick preparado: se respeta antes que los favoritos (aunque el cliente no muestre la marca).
+  await ask('setFavorites', { autoPick: true, when: 'end' });
+  await ask('setPrePick', { championId: 3 });
+  mock.st.pickable = [];
+  mock.startChampSelect();
+  mock.updateSession((s) => {
+    s.actions = [[{ id: 5, actorCellId: 0, type: 'pick', championId: 0, completed: false, isInProgress: true }]];
+    s.timer = { phase: 'BAN_PICK', adjustedTimeLeftInPhase: 1500, totalTimeInPhase: 30000, isInfinite: false };
+  });
+  await waitFor(() => mock.calls.find((c) => c.method === 'PATCH' && /actions\/5$/.test(c.url) && c.body.completed), 'pick con preparado');
+  assert.strictEqual(mock.calls.find((c) => c.method === 'PATCH' && /actions\/5$/.test(c.url) && c.body.completed).body.championId, 3);
+  ok('pick automático: tu pick preparado va antes que los favoritos (aunque la lista del cliente venga vacía)');
+  mock.setPhase('None'); await sleep(300);
+  await ask('setPrePick', { championId: null });
+  mock.st.pickable = [1, 2, 3, 22, 266];
+
+  // 5c) "Apenas me toca": se confirma al empezar el turno, sin esperar al 0; también sin reloj.
+  await ask('setFavorites', { when: 'start' });
+  await waitFor(() => state.settings.favorites.when === 'start', 'modo start');
+  mock.startChampSelect();
+  const t1 = Date.now();
+  mock.updateSession((s) => {
+    s.actions = [[{ id: 6, actorCellId: 0, type: 'pick', championId: 0, completed: false, isInProgress: true }]];
+    s.timer = { phase: 'BAN_PICK', adjustedTimeLeftInPhase: 0, totalTimeInPhase: 0, isInfinite: true };
+  });
+  await waitFor(() => mock.calls.find((c) => c.method === 'PATCH' && /actions\/6$/.test(c.url) && c.body.completed), 'pick al empezar', 5000);
+  const st6 = mock.calls.find((c) => c.method === 'PATCH' && /actions\/6$/.test(c.url) && c.body.completed);
+  assert(st6.t - t1 < 3000, 'apenas empieza el turno');
+  ok('pick automático "apenas me toca": se confirma al empezar tu turno (también sin reloj)');
+  mock.setPhase('None'); await sleep(300);
+  await ask('setFavorites', { when: 'end' });
+
   // 6) Chat en ranked: apodo que da el cliente por celda (en tu idioma), nunca "Aliado N".
   mock.st.chat = [];
   mock.st.cellSummoners = { 1: { cellId: 1, nameVisibilityType: 'HIDDEN', playerAlias: 'Dagarraco Rocoso' } };
