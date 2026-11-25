@@ -18,6 +18,7 @@ const game = (championId, lane, role, win) => ({ gameMode: 'CLASSIC', participan
   const mock = await startMock();
   process.env.OQ_LOCKFILE = mock.lockfile;
   process.env.OQ_NO_KILL = '1';
+  process.env.OQ_NO_DDRAGON = '1';
   const dataDir = fs.mkdtempSync(path.join(os.tmpdir(), 'oq-data4-'));
   const { startServer } = require('../src/server');
   const srv = await startServer({ dataDir, port: 4970 });
@@ -201,7 +202,7 @@ const game = (championId, lane, role, win) => ({ gameMode: 'CLASSIC', participan
     { vs: [], lane: 'jungle', picks: [{ c: 2 }] },
   ] });
   await waitFor(() => (state.settings.favorites.rules || []).length === 2, 'reglas guardadas');
-  assert.deepStrictEqual(state.settings.favorites.rules[0], { vs: [114], lane: '', picks: [{ c: 54, avoid: [203] }, { c: 86, avoid: [] }], off: false });
+  assert.deepStrictEqual(state.settings.favorites.rules[0], { vs: [114], lane: '', picks: [{ c: 54, avoid: [203] }, { c: 86, avoid: [] }], off: false, conds: [], kind: 'pick' });
   assert.strictEqual(state.settings.favorites.rules[1].lane, 'jungle');
   ok('reglas: se guardan limpias (sin repetidos ni datos inválidos)');
 
@@ -231,6 +232,41 @@ const game = (championId, lane, role, win) => ({ gameMode: 'CLASSIC', participan
   ok('reglas: si ninguna aplica (rival o línea), sigue con tu pick preparado y favoritos');
   await ask('setPrePick', { championId: null });
   await ask('setFavorites', { rules: [] });
+
+  // 5g) Condiciones de composición, aliados, orden de pick y reglas de bloqueo.
+  srv.engine._cinfo = new Map([
+    [1, { tags: ['mage'], melee: false, dmg: 'ap' }], [103, { tags: ['mage', 'assassin'], melee: false, dmg: 'ap' }], [13, { tags: ['mage'], melee: false, dmg: 'ap' }],
+    [266, { tags: ['fighter', 'tank'], melee: true, dmg: 'ad' }], [54, { tags: ['tank', 'fighter'], melee: true, dmg: 'ap' }],
+    [51, { tags: ['marksman'], melee: false, dmg: 'ad' }], [412, { tags: ['support', 'fighter'], melee: true, dmg: 'ad' }], [2, { tags: ['fighter'], melee: true, dmg: 'ad' }],
+  ]);
+  mock.st.pickable = [1, 2, 3, 22, 266, 54, 86, 51, 103, 13];
+  const compPick = async (actionId, rules, favs, allies, extraActions, afterActions) => {
+    await ask('setFavorites', { rules, ids: favs, useHistory: false });
+    mock.startChampSelect();
+    mock.updateSession((s) => {
+      allies.forEach((c, i) => { s.myTeam[i + 1].championId = c; });
+      s.actions = [(extraActions || []).concat([{ id: actionId, actorCellId: 0, type: 'pick', championId: 0, completed: false, isInProgress: true }], afterActions || [])];
+      s.timer = { phase: 'BAN_PICK', adjustedTimeLeftInPhase: 1200, totalTimeInPhase: 30000, isInfinite: false };
+    });
+    const c = await waitFor(() => mock.calls.find((x) => x.method === 'PATCH' && new RegExp('actions/' + actionId + '$').test(x.url) && x.body.completed), 'pick ' + actionId);
+    mock.setPhase('None'); await sleep(300);
+    return c.body.championId;
+  };
+  const block = [{ kind: 'block', conds: [{ t: 'count', team: 'ally', attr: 'mage', op: 'ge', n: 2 }], block: { attr: 'mage' }, picks: [] }];
+  assert.strictEqual(await compPick(30, block, [1, 266], [103, 13]), 266, 'con 2 magos aliados no saca otro mago');
+  assert.strictEqual(await compPick(31, block, [1, 266], [103]), 1, 'con 1 mago sí');
+  ok('reglas de bloqueo: "si mi equipo tiene 2 magos, no elegir otro mago"');
+  assert.strictEqual(await compPick(32, [{ conds: [{ t: 'ally', champs: [412] }], picks: [{ c: 51 }] }], [1], [412]), 51);
+  assert.strictEqual(await compPick(33, [{ conds: [{ t: 'ally', champs: [412] }], picks: [{ c: 51 }] }], [1], [2]), 1);
+  ok('reglas con aliados: sinergia "si mi equipo tiene a Thresh, elegir Caitlyn"');
+  assert.strictEqual(await compPick(34, [{ conds: [{ t: 'count', team: 'ally', attr: 'tank', op: 'eq', n: 0 }], picks: [{ attr: 'tank' }] }], [1, 54], [103, 51]), 54);
+  ok('reglas por composición: "si falta tanque, mi mejor tanque" (de mis favoritos)');
+  const allyDone = [{ id: 90, actorCellId: 1, type: 'pick', championId: 2, completed: true }, { id: 91, actorCellId: 2, type: 'pick', championId: 51, completed: true }];
+  const lastRule = [{ conds: [{ t: 'order', v: 'last' }], picks: [{ c: 266 }] }];
+  assert.strictEqual(await compPick(35, lastRule, [1], [2, 51], allyDone), 266, 'último pick de tu equipo');
+  assert.strictEqual(await compPick(36, lastRule, [1], [], [], [{ id: 92, actorCellId: 1, type: 'pick', championId: 0, completed: false }]), 1, 'primero: no aplica');
+  ok('reglas por orden de pick: "si pickeo último"');
+  await ask('setFavorites', { rules: [], ids: [22, 266, 1] });
 
   // 6) Chat en ranked: apodo que da el cliente por celda (en tu idioma), nunca "Aliado N".
   mock.st.chat = [];

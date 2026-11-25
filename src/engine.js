@@ -58,6 +58,7 @@ function histPos(tl) {
 
 // Reglas del pick automático, limpias y con topes (para que un pedido raro no rompa nada).
 const LANES = ['top', 'jungle', 'middle', 'bottom', 'utility'];
+const ATTRS = ['tank', 'fighter', 'mage', 'assassin', 'marksman', 'support', 'melee', 'ranged', 'ap', 'ad'];
 function cleanRules(list) {
   const ids = (a, n) => [...new Set((Array.isArray(a) ? a : []).map(Number).filter((x) => x > 0))].slice(0, n);
   return (Array.isArray(list) ? list : []).slice(0, 30).map((r) => {
@@ -65,9 +66,23 @@ function cleanRules(list) {
     const picks = [];
     (Array.isArray(r.picks) ? r.picks : []).forEach((p) => {
       const c = Number(p && p.c) || 0;
-      if (c > 0 && !picks.some((x) => x.c === c) && picks.length < 5) picks.push({ c, avoid: ids(p.avoid, 10) });
+      const attr = ATTRS.includes(p && p.attr) ? p.attr : '';
+      if (picks.length >= 5) return;
+      if (c > 0 && !picks.some((x) => x.c === c)) picks.push({ c, avoid: ids(p.avoid, 10) });
+      else if (!c && attr && !picks.some((x) => x.attr === attr)) picks.push({ c: 0, attr, avoid: ids(p.avoid, 10) });
     });
-    return { vs: ids(r.vs, 10), lane: LANES.includes(r.lane) ? r.lane : '', picks, off: !!r.off };
+    const conds = (Array.isArray(r.conds) ? r.conds : []).slice(0, 8).map((c) => {
+      c = c || {};
+      if (c.t === 'ally' || c.t === 'enemy') return { t: c.t, champs: ids(c.champs, 10) };
+      if (c.t === 'count') return { t: 'count', team: c.team === 'enemy' ? 'enemy' : 'ally', attr: ATTRS.includes(c.attr) ? c.attr : 'mage', op: ['ge', 'le', 'eq'].includes(c.op) ? c.op : 'ge', n: Math.max(0, Math.min(5, Number(c.n) || 0)) };
+      if (c.t === 'order') return { t: 'order', v: c.v === 'last' ? 'last' : String(Math.max(1, Math.min(5, Number(c.v) || 1))) };
+      return null;
+    }).filter(Boolean);
+    const kind = r.kind === 'block' ? 'block' : 'pick';
+    const b = r.block || {};
+    const out = { vs: ids(r.vs, 10), lane: LANES.includes(r.lane) ? r.lane : '', picks, off: !!r.off, conds, kind };
+    if (kind === 'block') out.block = { attr: ATTRS.includes(b.attr) ? b.attr : '', champs: ids(b.champs, 10) };
+    return out;
   });
 }
 
@@ -169,6 +184,7 @@ class Engine extends EventEmitter {
     if (me.status === 200 && me.data) { this._mySummonerId = me.data.summonerId; this._myPuuid = me.data.puuid || null; }
     this.s.queues = this._pickQueues(queues.data);
     await this._refreshRunes();
+    this._loadChampInfo();
     this._loadSpellModes();
     clearInterval(this._invInterval);
     this._invInterval = setInterval(() => this._checkInvites(), 3000);
@@ -377,6 +393,7 @@ class Engine extends EventEmitter {
     if (p === 'ChampSelect' && prev !== 'ChampSelect') {
       this._prepickDone = false; this._prepickTries = 0;
       this._autoPickTurn = null; this._autoPickStartFor = null;
+      this._loadChampInfo();
       this._loadHistory();
       this._lastMyTurnId = null;
       this._userBanChoice = null;
@@ -698,6 +715,11 @@ class Engine extends EventEmitter {
       banNumber: myBanIdx >= 0 ? myBanIdx + 1 : null,
       bansBefore: myBanIdx >= 0 ? bans.slice(0, myBanIdx).filter((o) => !o.completed).length : null,
     };
+    // Tu orden de pick dentro de tu equipo (1 = primero); para las reglas "si pickeo primero / último".
+    const allyPicks = picks.filter((o) => o.ally);
+    const myAllyIdx = allyPicks.findIndex((o) => o.mine);
+    info.allyPickNumber = myAllyIdx >= 0 ? myAllyIdx + 1 : null;
+    info.allyPickTotal = allyPicks.length;
 
     const mapP = (p) => ({
       cellId: p.cellId,
@@ -1064,7 +1086,7 @@ class Engine extends EventEmitter {
     const pre = Number(this.settings.prePick && this.settings.prePick.championId) || 0;
     // 1) lo que marcaste vos a mano, 2) tus reglas (en tu orden), 3) tu pick preparado, 4) tus favoritos, 5) tus mejores según tus partidas.
     const hover = Number((cs.myTurn && cs.myTurn.championId) || me.championId || me.intent) || 0;
-    if (hover && hover !== pre) out.push(hover); // si lo marcó la app por tu pick preparado, va después de las reglas
+    if (this._manualHover()) out.push(hover); // si lo marcó la app por tu pick preparado, va después de las reglas
     out.push(...this._rulePicks().map((x) => x.championId));
     if (hover) out.push(hover);
     if (pre) out.push(pre);
@@ -1077,24 +1099,126 @@ class Engine extends EventEmitter {
 
   // Reglas: "si el rival tiene X (y juego tal línea), elegí A, B o C; salteá A si además tienen Y".
   // Solo se ven los campeones rivales ya mostrados por el cliente (en draft, los confirmados).
+  _ruleCtx() {
+    const cs = this.s.champSelect;
+    const me = (cs.myTeam || []).find((p) => p.isMe) || {};
+    // Aliados: lo confirmado o lo que tienen marcado (el cliente muestra la intención de tu equipo). Rivales: solo lo que ya se ve.
+    const allies = (cs.myTeam || []).filter((p) => !p.isMe).map((p) => Number(p.championId || p.intent)).filter((x) => x > 0);
+    const enemies = (cs.theirTeam || []).map((p) => Number(p.championId)).filter((x) => x > 0);
+    const info = cs.info || {};
+    return { pos: normPos(me.position), allies, enemies, enemySet: new Set(enemies), order: info.allyPickNumber || 0, orderTotal: info.allyPickTotal || 0 };
+  }
+
+  _condOk(c, x) {
+    if (!c) return true;
+    if (c.t === 'ally') return !c.champs.length || c.champs.some((k) => x.allies.includes(k));
+    if (c.t === 'enemy') return !c.champs.length || c.champs.some((k) => x.enemySet.has(k));
+    if (c.t === 'order') return c.v === 'last' ? (x.order > 0 && x.order === x.orderTotal) : x.order === Number(c.v);
+    if (c.t === 'count') {
+      const list = c.team === 'enemy' ? x.enemies : x.allies;
+      const n = list.filter((k) => this._champHas(k, c.attr)).length;
+      return c.op === 'le' ? n <= c.n : c.op === 'eq' ? n === c.n : n >= c.n;
+    }
+    return true;
+  }
+
+  _ruleApplies(r, x) {
+    if (!r || r.off) return false;
+    if (r.lane && r.lane !== x.pos) return false;
+    if ((r.vs || []).length && !r.vs.some((c) => x.enemySet.has(Number(c)))) return false;
+    return (r.conds || []).every((c) => this._condOk(c, x));
+  }
+
+  // Tu pool para opciones del tipo "mi mejor mago": favoritos, después tus mejores según partidas y tu maestría.
+  _myPool() {
+    const f = this.settings.favorites || {};
+    const out = [...(f.ids || [])];
+    const cs = this.s.champSelect;
+    if (cs && cs.recommend) out.push(...cs.recommend.map((r) => r.championId));
+    if (this._hist) out.push(...[...this._hist.mastery.entries()].sort((a, b) => b[1] - a[1]).map((e) => e[0]));
+    return [...new Set(out.map(Number).filter(Boolean))];
+  }
+
+  // Reglas: "si el rival tiene X (y juego tal línea, y se cumplen estas condiciones), elegí A, B o C; salteá A si además tienen Y".
+  // Solo se ven los campeones rivales ya mostrados por el cliente (en draft, los confirmados).
   _rulePicks() {
     const cs = this.s.champSelect;
     const rules = ((this.settings.favorites || {}).rules) || [];
     if (!cs || !rules.length) return [];
-    const me = (cs.myTeam || []).find((p) => p.isMe) || {};
-    const pos = normPos(me.position);
-    const enemies = new Set((cs.theirTeam || []).map((p) => Number(p.championId)).filter((x) => x > 0));
+    const x = this._ruleCtx();
     const out = [];
     rules.forEach((r, i) => {
-      if (!r || r.off) return;
-      if (r.lane && r.lane !== pos) return;
-      if ((r.vs || []).length && !r.vs.some((c) => enemies.has(Number(c)))) return;
+      if ((r && r.kind) === 'block' || !this._ruleApplies(r, x)) return;
       (r.picks || []).forEach((pk) => {
-        if ((pk.avoid || []).some((c) => enemies.has(Number(c)))) return;
-        out.push({ championId: Number(pk.c), rule: i });
+        if ((pk.avoid || []).some((c) => x.enemySet.has(Number(c)))) return;
+        if (pk.c) out.push({ championId: Number(pk.c), rule: i });
+        else if (pk.attr) this._myPool().filter((c) => this._champHas(c, pk.attr)).forEach((c) => out.push({ championId: c, rule: i }));
       });
     });
     return out;
+  }
+
+  // Reglas de bloqueo: "no elegir magos si mi equipo ya tiene 2". Devuelve una función que dice si un campeón queda bloqueado.
+  _blockedBy() {
+    const cs = this.s.champSelect;
+    const rules = ((this.settings.favorites || {}).rules) || [];
+    if (!cs) return () => -1;
+    const x = this._ruleCtx();
+    const act = rules.map((r, i) => ((r && r.kind) === 'block' && this._ruleApplies(r, x) ? { r, i } : null)).filter(Boolean);
+    return (c) => {
+      const hit = act.find(({ r }) => (r.block.champs || []).includes(c) || (r.block.attr && this._champHas(c, r.block.attr)));
+      return hit ? hit.i : -1;
+    };
+  }
+
+  // ---------- datos de campeones para las reglas ----------
+  // Clases (Tanque, Mago...), cuerpo a cuerpo / a distancia y tipo de daño. Fuente: Data Dragon (los datos públicos de Riot);
+  // si no hay internet, las clases salen del propio cliente (sin melee/distancia ni tipo de daño).
+  async _loadChampInfo() {
+    if (this._cinfo || this._cinfoBusy) return;
+    this._cinfoBusy = true;
+    const map = new Map();
+    try {
+      const r = await this.lcu.request('GET', '/lol-game-data/assets/v1/champion-summary.json');
+      if (r.status === 200 && Array.isArray(r.data)) r.data.forEach((c) => { if (c && c.id > 0) map.set(Number(c.id), { tags: (c.roles || []).map((x) => String(x).toLowerCase()), melee: null, dmg: null }); });
+    } catch (_) {}
+    try {
+      if (typeof fetch === 'function' && !process.env.OQ_NO_DDRAGON) {
+        const v = (await (await fetch('https://ddragon.leagueoflegends.com/api/versions.json')).json())[0];
+        const d = await (await fetch(`https://ddragon.leagueoflegends.com/cdn/${v}/data/en_US/champion.json`)).json();
+        Object.values(d.data || {}).forEach((c) => {
+          const k = Number(c.key); const prev = map.get(k) || {};
+          const range = c.stats && Number(c.stats.attackrange);
+          const inf = c.info || {};
+          map.set(k, {
+            tags: (c.tags || []).map((x) => String(x).toLowerCase()).concat(prev.tags || []),
+            melee: range ? range <= 250 : null,
+            dmg: inf.magic != null && inf.attack != null ? (inf.magic > inf.attack ? 'ap' : 'ad') : null,
+          });
+        });
+      }
+    } catch (_) {}
+    if (map.size) this._cinfo = map;
+    this._cinfoBusy = false;
+    if (this._diag) this._diag.champInfo = { size: map.size, withRange: [...map.values()].filter((v) => v.melee !== null).length };
+  }
+
+  _champHas(c, attr) {
+    const v = this._cinfo && this._cinfo.get(Number(c));
+    if (!v || !attr) return false;
+    if (attr === 'melee') return v.melee === true;
+    if (attr === 'ranged') return v.melee === false;
+    if (attr === 'ap' || attr === 'ad') return v.dmg === attr;
+    return v.tags.includes(attr);
+  }
+
+  // Campeón que marcaste vos a mano (no el que marcó la app por tu pick preparado). Ese se respeta siempre.
+  _manualHover() {
+    const cs = this.s.champSelect;
+    const me = (cs.myTeam || []).find((p) => p.isMe) || {};
+    const pre = Number(this.settings.prePick && this.settings.prePick.championId) || 0;
+    const hover = Number((cs.myTurn && cs.myTurn.championId) || me.championId || me.intent) || 0;
+    return hover && hover !== pre ? hover : 0;
   }
 
   // Qué elegiría el pick automático ahora mismo (para mostrarlo en el champ select).
@@ -1105,7 +1229,8 @@ class Engine extends EventEmitter {
     const pickable = new Set((cs.pickable || []).map(Number));
     const taken = new Set([...(cs.myTeam || []), ...(cs.theirTeam || [])].filter((x) => !x.isMe && x.championId).map((x) => Number(x.championId)));
     const banned = new Set((cs.banned || []).map(Number));
-    const c = this._autoPickCandidates().find((x) => (!pickable.size || pickable.has(x)) && !taken.has(x) && !banned.has(x));
+    const blocked = this._blockedBy(); const manual = this._manualHover();
+    const c = this._autoPickCandidates().find((x) => (!pickable.size || pickable.has(x)) && !taken.has(x) && !banned.has(x) && (x === manual || blocked(x) < 0));
     const rp = c ? this._rulePicks().find((x) => x.championId === c) : null;
     cs.autoPickNext = c ? { championId: c, rule: rp ? rp.rule : -1 } : null;
   }
@@ -1178,8 +1303,9 @@ class Engine extends EventEmitter {
     const taken = new Set([...(cs.myTeam || []), ...(cs.theirTeam || [])].filter((x) => !x.isMe && x.championId).map((x) => Number(x.championId)));
     const banned = new Set((cs.banned || []).map(Number));
     const cands = this._autoPickCandidates();
+    const blocked = this._blockedBy(); const manual = this._manualHover();
     // Si la lista del cliente viene vacía (pasa en algunas partidas personalizadas) no se descarta a nadie por eso.
-    const pick = cands.find((c) => (!pickable.size || pickable.has(c)) && !taken.has(c) && !banned.has(c));
+    const pick = cands.find((c) => (!pickable.size || pickable.has(c)) && !taken.has(c) && !banned.has(c) && (c === manual || blocked(c) < 0));
     const rp = pick ? this._rulePicks().find((x) => x.championId === pick) : null;
     const log = { rule: rp ? rp.rule : -1, t: Date.now(), when: (this.settings.favorites || {}).when || 'end', turnId, cands, pickableSize: pickable.size, hover: cs.myTurn.championId || 0, prePick: (this.settings.prePick || {}).championId || 0, pick: pick || 0 };
     if (this._diag) (this._diag.autoPick = this._diag.autoPick || []).push(log);

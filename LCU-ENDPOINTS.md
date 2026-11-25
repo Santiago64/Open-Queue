@@ -9,7 +9,7 @@ Open Queue talks only to the League client running on the player's own PC (127.0
 - /lol-champ-select/v1/session, pickable-champion-ids, bannable-champion-ids, skin-carousel-skins
 - /lol-lobby-team-builder/champ-select/v1/subset-champion-list
 - /lol-champions/v1/owned-champions-minimal, /lol-champions/v1/inventories/{summonerId}/champions/{id}/skins
-- /lol-game-data/assets/v1/summoner-spells.json
+- /lol-game-data/assets/v1/summoner-spells.json, /lol-game-data/assets/v1/champion-summary.json (champion classes for auto-pick rules)
 - /lol-perks/v1/pages, currentpage, inventory, styles, perks, recommended-pages/champion/{id}/position/{pos}/map/{map}, quick-play-selections/champion/{id}/position/{pos}
 - /lol-summoner/v1/current-summoner, /lol-summoner/v1/summoners/{id}
 - /lol-chat/v1/conversations, /lol-chat/v1/conversations/{id}/participants (champ select chat of the lobby)

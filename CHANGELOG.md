@@ -121,3 +121,9 @@
 - Orden del pick automático: lo que marcaste a mano, tus reglas (de arriba hacia abajo), tu pick preparado, tus favoritos y tus mejores según tus partidas.
 - En el champ select se muestra qué elegiría el pick automático en ese momento y por qué regla ("Si no elegís: Malphite · Regla 1").
 - Límite: solo se ven los rivales que el cliente ya muestra (en draft, los confirmados) y el cliente no dice en qué línea va cada rival.
+
+##  v0.8.13
+- **Reglas con más condiciones** (todas tienen que cumplirse): "mi equipo tiene a…" (sinergias; cuenta también lo que tus aliados tienen marcado), "cantidad en mi equipo / en el rival" de una clase (tanque, luchador, mago, asesino, tirador, soporte), cuerpo a cuerpo, a distancia, daño mágico o físico (≥, ≤ o =), y "mi turno de pick" (1º a 5º o último de tu equipo).
+- **Reglas de bloqueo** ("No elegir"): por ejemplo, "si mi equipo tiene 2 o más magos, no elegir magos". Bloquean una clase o una lista de campeones para el pick automático, salvo que los hayas marcado vos.
+- **Opción "Mi mejor de una clase"** dentro de una regla: por ejemplo, "si falta tanque, mi mejor tanque" (de tus favoritos, tus mejores según tus partidas y tu maestría).
+- Datos de clases, distancia y tipo de daño: Data Dragon (datos públicos de Riot). Sin internet se usan las clases del cliente. El tipo de daño es aproximado.

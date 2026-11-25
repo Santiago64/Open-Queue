@@ -738,7 +738,7 @@
 
     if (sheet.mode === 'qslot' && !(state && state.lobby && state.lobby.quickPlay)) { closeSheets(); return; }
     const isBan = sheet.mode === 'turn' && cs && cs.myTurn && cs.myTurn.type === 'ban';
-    $('scTitle').textContent = sheet.mode === 'rule' ? t(sheet.rt.kind === 'pick' ? 'ruleAddPick' : sheet.rt.kind === 'avoid' ? 'ruleAddAvoid' : 'ruleAddVs') : sheet.mode === 'fav' ? `${t('favorites')} ${sheet.qi + 1}` : sheet.mode === 'prepick' ? t('prePick') : sheet.mode === 'preban' ? t('preBan') : isBan ? t('chooseBan') : t('chooseChamp');
+    $('scTitle').textContent = sheet.mode === 'rule' ? t({ pick: 'ruleAddPick', avoid: 'ruleAddAvoid', ally: 'condAlly', block: 'ruleBlockWhat' }[sheet.rt.kind] || 'ruleAddVs') : sheet.mode === 'fav' ? `${t('favorites')} ${sheet.qi + 1}` : sheet.mode === 'prepick' ? t('prePick') : sheet.mode === 'preban' ? t('preBan') : isBan ? t('chooseBan') : t('chooseChamp');
     $('scNoData').textContent = S.ok ? '' : t('noData');
 
     const classes = ['Fighter', 'Tank', 'Mage', 'Assassin', 'Marksman', 'Support'];
@@ -807,6 +807,7 @@
   function saveRules() { cmd('setFavorites', { rules: RULES }); renderRules(); }
   function openRules() {
     RULES = JSON.parse(JSON.stringify((state.settings.favorites && state.settings.favorites.rules) || []));
+    RULES.forEach((r) => { r.conds = r.conds || []; r.kind = r.kind || 'pick'; if (r.kind === 'block') r.block = r.block || { attr: '', champs: [] }; });
     $('slTitle').textContent = t('rulesTitle');
     renderRules();
     $('sheetList').classList.remove('hidden');
@@ -822,24 +823,59 @@
         <button class="btn small" data-act="ruleMove" data-i="${i}" data-v="-1" ${i === 0 ? 'disabled' : ''}>&uarr;</button>
         <button class="btn small" data-act="ruleMove" data-i="${i}" data-v="1" ${i === RULES.length - 1 ? 'disabled' : ''}>&darr;</button>
         <button class="btn small" data-act="ruleDel" data-i="${i}">&#128465;</button></div>
+      <div class="chips" style="margin-top:8px"><button class="chip ${r.kind !== 'block' ? 'on' : ''}" data-act="ruleKind" data-i="${i}" data-v="pick">${t('ruleKindPick')}</button><button class="chip ${r.kind === 'block' ? 'on' : ''}" data-act="ruleKind" data-i="${i}" data-v="block">${t('ruleKindBlock')}</button></div>
       <div class="dim" style="font-size:12px;margin:10px 0 6px">${t('ruleVs')}</div>
       <div class="row wrap" style="gap:6px">${r.vs.map((k) => chipChamp(k, 'ruleVsDel', `data-i="${i}" data-k="${k}"`)).join('')}<button class="btn small" data-act="ruleAdd" data-kind="vs" data-i="${i}">+ ${t('ruleChamp')}</button></div>
       ${r.vs.length ? '' : `<p class="note" style="margin:4px 0 0">${t('ruleVsEmpty')}</p>`}
       <div class="dim" style="font-size:12px;margin:10px 0 6px">${t('ruleLane')}</div>
       <select data-rule-lane="${i}">${lanes.map((l) => `<option value="${l}" ${r.lane === l ? 'selected' : ''}>${l ? esc(POS[OQ.lang][l]) : t('ruleAnyLane')}</option>`).join('')}</select>
+      <div class="dim" style="font-size:12px;margin:10px 0 6px">${t('ruleConds')}</div>
+      ${r.conds.map((c, j) => condHtml(c, i, j)).join('')}
+      <select data-rule-addcond="${i}"><option value="">+ ${t('condAdd')}</option>${['ally', 'countAlly', 'countEnemy', 'order'].map((k) => `<option value="${k}">${t('cond_' + k)}</option>`).join('')}</select>
+      ${r.kind === 'block' ? blockHtml(r, i) : `
       <div class="dim" style="font-size:12px;margin:10px 0 6px">${t('rulePicks')}</div>
       ${r.picks.map((p, j) => `<div style="border:1px solid var(--line);padding:8px;margin-bottom:6px">
-        <div class="row" style="gap:6px">${champImg(p.c, 'sm')}<b style="flex:1">${j + 1}. ${esc(champName(p.c))}</b>
+        <div class="row" style="gap:6px">${p.c ? champImg(p.c, 'sm') : ''}<b style="flex:1">${j + 1}. ${p.c ? esc(champName(p.c)) : esc(t('ruleBestOf')) + ' ' + esc(t('attr_' + p.attr))}</b>
           <button class="btn small" data-act="rulePickMove" data-i="${i}" data-j="${j}" data-v="-1" ${j === 0 ? 'disabled' : ''}>&uarr;</button>
           <button class="btn small" data-act="rulePickMove" data-i="${i}" data-j="${j}" data-v="1" ${j === r.picks.length - 1 ? 'disabled' : ''}>&darr;</button>
           <button class="btn small" data-act="rulePickDel" data-i="${i}" data-j="${j}">&#10005;</button></div>
         <div class="row wrap" style="gap:6px;margin-top:6px;align-items:center"><small class="dim">${t('ruleAvoid')}</small>${p.avoid.map((k) => chipChamp(k, 'ruleAvoidDel', `data-i="${i}" data-j="${j}" data-k="${k}"`)).join('')}<button class="btn small" data-act="ruleAdd" data-kind="avoid" data-i="${i}" data-j="${j}">+</button></div></div>`).join('')}
-      ${r.picks.length < 5 ? `<button class="btn small" data-act="ruleAdd" data-kind="pick" data-i="${i}">+ ${t('ruleAddPick')}</button>` : ''}</div>`).join('');
+      ${r.picks.length < 5 ? `<div class="row wrap" style="gap:6px"><button class="btn small" data-act="ruleAdd" data-kind="pick" data-i="${i}">+ ${t('ruleAddPick')}</button><select data-rule-addattr="${i}" style="flex:1;min-width:150px;padding:8px"><option value="">+ ${t('ruleAddAttr')}</option>${ATTRS.map((a) => `<option value="${a}">${t('attr_' + a)}</option>`).join('')}</select></div>` : ''}`}</div>`).join('');
     $('slBody').innerHTML = `<p class="note" style="margin:0 0 10px">${t('rulesIntro')}</p>${cards || `<p class="dim">${t('rulesNone')}</p>`}
       <button class="btn block primary" data-act="ruleNew" ${RULES.length >= 30 ? 'disabled' : ''}>+ ${t('ruleNew')}</button>
       <p class="note" style="margin-top:12px">${t('rulesLimits')}</p>`;
   }
+  const ATTRS = ['tank', 'fighter', 'mage', 'assassin', 'marksman', 'support', 'melee', 'ranged', 'ap', 'ad'];
+  const sel = (attr, opts, cur) => `<select ${attr} style="width:auto;padding:6px 8px">${opts.map(([v, l]) => `<option value="${v}" ${String(cur) === String(v) ? 'selected' : ''}>${esc(l)}</option>`).join('')}</select>`;
+  function condHtml(c, i, j) {
+    const del = `<button class="iconbtn" style="width:28px;height:28px;font-size:12px" data-act="condDel" data-i="${i}" data-j="${j}">&#10005;</button>`;
+    let body = '';
+    if (c.t === 'ally') body = `<small class="dim">${t('condAlly')}</small> ${c.champs.map((k) => chipChamp(k, 'condAllyDel', `data-i="${i}" data-j="${j}" data-k="${k}"`)).join('')}<button class="btn small" data-act="ruleAdd" data-kind="ally" data-i="${i}" data-j="${j}">+</button>`;
+    else if (c.t === 'count') body = `<small class="dim">${t(c.team === 'enemy' ? 'condCountEnemy' : 'condCountAlly')}</small> ${sel(`data-rc="${i}:${j}:op"`, [['ge', '≥'], ['le', '≤'], ['eq', '=']], c.op)} ${sel(`data-rc="${i}:${j}:n"`, [0, 1, 2, 3, 4, 5].map((n) => [n, n]), c.n)} ${sel(`data-rc="${i}:${j}:attr"`, ATTRS.map((a) => [a, t('attr_' + a)]), c.attr)}`;
+    else if (c.t === 'order') body = `<small class="dim">${t('condOrder')}</small> ${sel(`data-rc="${i}:${j}:v"`, [['1', '1º'], ['2', '2º'], ['3', '3º'], ['4', '4º'], ['5', '5º'], ['last', t('condLast')]], c.v)}`;
+    return `<div class="row wrap" style="gap:6px;align-items:center;border:1px dashed var(--line2);padding:6px;margin-bottom:6px"><span style="flex:1;display:flex;flex-wrap:wrap;gap:6px;align-items:center">${body}</span>${del}</div>`;
+  }
+  function blockHtml(r, i) {
+    const b = r.block || { attr: '', champs: [] };
+    return `<div class="dim" style="font-size:12px;margin:10px 0 6px">${t('ruleBlockWhat')}</div>
+      <div class="row wrap" style="gap:6px;align-items:center">${sel(`data-rule-blockattr="${i}"`, [['', t('ruleBlockNoClass')]].concat(ATTRS.map((a) => [a, t('attr_' + a)])), b.attr)}
+      ${b.champs.map((k) => chipChamp(k, 'blockDel', `data-i="${i}" data-k="${k}"`)).join('')}<button class="btn small" data-act="ruleAdd" data-kind="block" data-i="${i}">+ ${t('ruleChamp')}</button></div>
+      <p class="note" style="margin:4px 0 0">${t('ruleBlockHelp')}</p>`;
+  }
   document.addEventListener('change', (e) => {
+    const g = (k) => e.target && e.target.getAttribute && e.target.getAttribute(k);
+    const rc = g('data-rc');
+    if (rc) { const [i, j, f] = rc.split(':'); const c = RULES[Number(i)] && RULES[Number(i)].conds[Number(j)]; if (c) { c[f] = f === 'n' ? Number(e.target.value) : e.target.value; saveRules(); } return; }
+    const ac = g('data-rule-addcond');
+    if (ac !== null && ac !== undefined && RULES[Number(ac)] && e.target.value) {
+      const v = e.target.value; const r = RULES[Number(ac)];
+      r.conds.push(v === 'ally' ? { t: 'ally', champs: [] } : v === 'order' ? { t: 'order', v: '1' } : { t: 'count', team: v === 'countEnemy' ? 'enemy' : 'ally', attr: 'mage', op: 'ge', n: 2 });
+      saveRules(); return;
+    }
+    const aa = g('data-rule-addattr');
+    if (aa !== null && aa !== undefined && RULES[Number(aa)] && e.target.value) { const r = RULES[Number(aa)]; if (!r.picks.some((p) => p.attr === e.target.value) && r.picks.length < 5) r.picks.push({ c: 0, attr: e.target.value, avoid: [] }); saveRules(); return; }
+    const ba = g('data-rule-blockattr');
+    if (ba !== null && ba !== undefined && RULES[Number(ba)]) { const r = RULES[Number(ba)]; r.block = r.block || { attr: '', champs: [] }; r.block.attr = e.target.value; saveRules(); return; }
     const li = e.target && e.target.getAttribute && e.target.getAttribute('data-rule-lane');
     if (li !== null && li !== undefined && RULES[Number(li)]) { RULES[Number(li)].lane = e.target.value; saveRules(); }
   });
@@ -1165,7 +1201,11 @@
       case 'clearFavs': cmd('setFavorites', { ids: [] }); break;
       case 'toggleAutoPick': cmd('setFavorites', { autoPick: !(state.settings.favorites && state.settings.favorites.autoPick) }); break;
       case 'openRules': openRules(); break;
-      case 'ruleNew': RULES.push({ vs: [], lane: '', picks: [], off: false }); saveRules(); break;
+      case 'ruleNew': RULES.push({ vs: [], lane: '', picks: [], off: false, conds: [], kind: 'pick' }); saveRules(); break;
+      case 'ruleKind': { const r = RULES[Number(el.getAttribute('data-i'))]; if (r) { r.kind = v; if (v === 'block') r.block = r.block || { attr: '', champs: [] }; saveRules(); } break; }
+      case 'condDel': { const r = RULES[Number(el.getAttribute('data-i'))]; if (r) { r.conds.splice(Number(el.getAttribute('data-j')), 1); saveRules(); } break; }
+      case 'condAllyDel': { const r = RULES[Number(el.getAttribute('data-i'))]; const c = r && r.conds[Number(el.getAttribute('data-j'))]; if (c) { c.champs = c.champs.filter((k) => k !== Number(el.getAttribute('data-k'))); saveRules(); } break; }
+      case 'blockDel': { const r = RULES[Number(el.getAttribute('data-i'))]; if (r && r.block) { r.block.champs = r.block.champs.filter((k) => k !== Number(el.getAttribute('data-k'))); saveRules(); } break; }
       case 'ruleToggle': { const r = RULES[Number(el.getAttribute('data-i'))]; if (r) { r.off = !r.off; saveRules(); } break; }
       case 'ruleDel': if (confirm(t('ruleDelConfirm'))) { RULES.splice(Number(el.getAttribute('data-i')), 1); saveRules(); } break;
       case 'ruleMove': { const i = Number(el.getAttribute('data-i')); const j = i + Number(v); if (RULES[j]) { [RULES[i], RULES[j]] = [RULES[j], RULES[i]]; saveRules(); } break; }
@@ -1321,6 +1361,8 @@
         if (rt.kind === 'vs') { if (!r.vs.includes(k)) r.vs.push(k); }
         else if (rt.kind === 'pick') { if (!r.picks.some((p) => p.c === k)) r.picks.push({ c: k, avoid: [] }); }
         else if (rt.kind === 'avoid' && r.picks[rt.pi]) { if (!r.picks[rt.pi].avoid.includes(k)) r.picks[rt.pi].avoid.push(k); }
+        else if (rt.kind === 'ally' && r.conds[rt.pi]) { if (!r.conds[rt.pi].champs.includes(k)) r.conds[rt.pi].champs.push(k); }
+        else if (rt.kind === 'block') { r.block = r.block || { attr: '', champs: [] }; if (!r.block.champs.includes(k)) r.block.champs.push(k); }
         saveRules();
       }
       $('sheetChamp').classList.add('hidden'); $('sheetChamp').style.zIndex = ''; sheet.mode = null;
