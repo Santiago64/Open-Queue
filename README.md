@@ -29,7 +29,7 @@ VIDEO_PRACTICE_URL
 - English and Spanish.
 
 ## How to use (Windows)
-1. Install [Node.js LTS](https://nodejs.org) (once).
+1. Install [Node.js](https://nodejs.org) (once). LTS is recommended, but any version from 18 on works, including "Current".
 2. Double-click **`Abrir Open Queue.vbs`**. The first run installs what it needs (internet required, about a minute). Use **`Iniciar Open Queue.bat`** if you want to see the console.
 3. If Windows Firewall asks, allow **Private networks** only.
 4. Open the League client.
@@ -74,7 +74,7 @@ Companion gratuito y de código abierto para el cliente de League of Legends. Co
 - Español e inglés.
 
 ### Cómo usarlo (Windows)
-1. Instalá [Node.js LTS](https://nodejs.org) (una sola vez).
+1. Instalá [Node.js](https://nodejs.org) (una sola vez). Recomendamos la LTS, pero sirve cualquier versión desde la 18, incluida la "Current".
 2. Doble clic en **`Abrir Open Queue.vbs`**. La primera vez instala lo necesario (necesita internet, tarda un minuto). Si algo falla, usá **`Iniciar Open Queue.bat`**, que muestra la consola.
 3. Si el firewall de Windows pregunta, permití solo **Redes privadas**.
 4. Abrí el cliente de LoL.
