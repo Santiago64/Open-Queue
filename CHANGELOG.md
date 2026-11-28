@@ -160,3 +160,8 @@
 
 ##  v0.8.19
 - **Discord desde la PC**: la ventana de escritorio ahora tiene la tarjeta de Discord. Ahí pegás el link del voice, elegís el mensaje (bases o propio) y activás el Rich Presence con su Application ID. El botón "Mandar link del voice" lo manda al chat de la sala o del champ select sin necesitar el celular. En modo streamer el link se oculta.
+
+##  v0.8.20
+- Arreglo: en Flex el ban preparado y el ban automático no hacían nada. La lista de campeones baneables venía vacía por la ruta que usaba la app; ahora se toma de la otra ruta del cliente y, si sigue vacía, se intenta igual.
+- Invitar amigos: los que ya están en tu sala aparecen al final como "En tu sala" y no se pueden invitar. Los que tienen invitación pendiente se ven como "Enviada".
+- Diagnóstico: anota qué decidió el ban preparado en cada turno, y oculta todas las claves y tokens (también los del chat del champ select).

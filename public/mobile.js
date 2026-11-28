@@ -1282,7 +1282,13 @@
     if (!FR.list) h += `<p class="dim">${FR.loading ? t('runesLoading') : t('errGeneric')}</p>`;
     else {
       const items = FR.list.filter((f) => !q || f.name.toLowerCase().includes(q));
-      h += items.length ? `<div class="frlist">${items.map((f) => `<div class="frrow ${f.status === 'mobile' ? 'off' : ''}" data-fid="${f.id}" ${f.status === 'mobile' ? '' : `data-act="invFriend" data-k="${f.id}"`}>${friendAvatar(f)}<div class="frinfo"><div class="frname">${esc(f.name)}</div><div class="frtext">${esc(friendText(f))}</div></div>${f.status === 'mobile' ? '' : `<b class="frbtn">${FR.sent.has(f.id) ? t('frSent') : t('frInvite')}</b>`}</div>`).join('')}</div>` : `<p class="dim">${t('frNone')}</p>`;
+      // Los que ya están en tu sala no se pueden invitar (se ven apagados, al final).
+      const row = (f) => {
+        const off = f.status === 'mobile' || f.inLobby;
+        const btn = f.inLobby ? `<b class="frbtn" style="opacity:.6">${t('frInLobby')}</b>` : f.status === 'mobile' ? '' : `<b class="frbtn">${FR.sent.has(f.id) || f.invited ? t('frSent') : t('frInvite')}</b>`;
+        return `<div class="frrow ${off ? 'off' : ''}" data-fid="${f.id}" ${off ? '' : `data-act="invFriend" data-k="${f.id}"`}>${friendAvatar(f)}<div class="frinfo"><div class="frname">${esc(f.name)}</div><div class="frtext">${esc(friendText(f))}</div></div>${btn}</div>`;
+      };
+      h += items.length ? `<div class="frlist">${items.map(row).join('')}</div>` : `<p class="dim">${t('frNone')}</p>`;
     }
     $('slBody').innerHTML = h;
     const inp = $('frQ'); if (inp) inp.oninput = (e) => { FR.q = e.target.value; const pos = e.target.selectionStart; renderFriends(); const n = $('frQ'); if (n) { n.focus(); n.setSelectionRange(pos, pos); } };
@@ -1415,7 +1421,7 @@
       case 'invFriend': {
         const id = Number(el.getAttribute('data-k'));
         const r = await request('inviteFriend', { summonerId: id });
-        if (r && r.ok) { FR.sent.add(id); toast(t('frSentToast')); } else toast(t('frErr'), 5000);
+        if (r && r.ok) { FR.sent.add(id); toast(t('frSentToast')); } else toast(r && r.error === 'inLobby' ? t('frInLobbyToast') : t('frErr'), 5000);
         renderFriends();
         break;
       }

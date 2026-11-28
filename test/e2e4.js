@@ -383,6 +383,13 @@ const game = (championId, lane, role, win) => ({ gameMode: 'CLASSIC', participan
   await sleep(300);
   assert.strictEqual(await finish(br.n0), 1, 'si cambiaste el ban vos, se respeta');
   ok('ban automático: si marcaste otro campeón vos, en el segundo 0 se banea el tuyo');
+  // Flex: la lista de baneables solo viene por la ruta del armado de equipos.
+  mock.st.bannableTB = mock.st.bannable; mock.st.bannable = [];
+  br = await banRun();
+  assert.strictEqual(br.hov, 3, 'con la lista de la otra ruta');
+  assert.strictEqual(await finish(br.n0), 3);
+  mock.st.bannable = mock.st.bannableTB; mock.st.bannableTB = null;
+  ok('ban automático en Flex: la lista de baneables se toma de la otra ruta del cliente');
   await ask('setHates', { autoBan: false });
 
   // 5l) Planificación: el pick preparado se muestra a tu equipo antes de los baneos (sin banearlo).

@@ -96,7 +96,9 @@ function cleanRules(list) {
   });
 }
 
-// El diagnóstico nunca lleva la clave ni el token del chat de la sala.
+// El diagnóstico nunca lleva claves ni tokens (por ejemplo los del chat de la sala o del champ select).
+function hideSecrets(k, v) { return typeof v === 'string' && /password|jwt|token/i.test(k) ? '(oculto)' : v; }
+
 function redactLobby(l) {
   if (!l || typeof l !== 'object') return l;
   const o = Object.assign({}, l);
@@ -556,8 +558,13 @@ class Engine extends EventEmitter {
 
   // ---------- invitar amigos a la sala ----------
   async friends() {
-    const r = await this.lcu.request('GET', '/lol-chat/v1/friends');
+    const [r, lr] = await Promise.all([this.lcu.request('GET', '/lol-chat/v1/friends'), this.lcu.request('GET', '/lol-lobby/v2/lobby')]);
     if (r.status !== 200 || !Array.isArray(r.data)) return { ok: false, error: 'nofriends' };
+    // Quién ya está en tu sala y a quién ya invitaste (invitación pendiente): no se ofrece invitarlos de nuevo.
+    const lob = lr.status === 200 && lr.data ? lr.data : {};
+    const inSids = new Set((lob.members || []).map((m) => Number(m.summonerId)).filter(Boolean));
+    const inPuuids = new Set((lob.members || []).map((m) => m.puuid).filter(Boolean));
+    const pend = new Set((lob.invitations || []).filter((i) => ['Pending', 'OnHold', 'Requested'].includes(i.state)).map((i) => Number(i.toSummonerId)).filter((x) => x > 1));
     if (this._diag) this._diag.friendsSample = r.data.slice(0, 3);
     const QT = { RANKED_SOLO_5x5: 'Ranked Solo/Duo', RANKED_FLEX_SR: 'Ranked Flex', NORMAL: 'Normal', NORMAL_DRAFT: 'Normal', ARAM: 'ARAM', KIWI: 'ARAM Mayhem', CHERRY: 'Arena', BOT: 'Bots', SWIFTPLAY: 'Swiftplay' };
     const label = (f) => {
@@ -583,11 +590,13 @@ class Engine extends EventEmitter {
           gs: lol.gameStatus || '',
           queue: qt,
           since: Number(lol.timeStamp) || 0,
+          inLobby: inSids.has(Number(f.summonerId)) || (!!f.puuid && inPuuids.has(f.puuid)),
+          invited: pend.has(Number(f.summonerId)),
         };
       })
       .filter((f) => f.name);
     const rank = { online: 0, away: 1, busy: 2, dnd: 3, ingame: 4, mobile: 5 };
-    list.sort((a, b) => rank[a.status] - rank[b.status] || a.name.localeCompare(b.name));
+    list.sort((a, b) => (a.inLobby - b.inLobby) || rank[a.status] - rank[b.status] || a.name.localeCompare(b.name));
     return { ok: true, friends: list };
   }
 
@@ -595,6 +604,8 @@ class Engine extends EventEmitter {
     summonerId = Number(summonerId);
     if (!summonerId) return { ok: false, error: 'bad' };
     if (this.s.phase !== 'Lobby') return { ok: false, error: 'notLobby' };
+    const lr = await this.lcu.request('GET', '/lol-lobby/v2/lobby');
+    if (lr.status === 200 && lr.data && (lr.data.members || []).some((m) => Number(m.summonerId) === summonerId)) return { ok: false, error: 'inLobby' };
     const r = await this.lcu.request('POST', '/lol-lobby/v2/lobby/invitations', [{ toSummonerId: summonerId }]);
     if (this._diag) this._diag.inviteTry = { status: r.status, data: r.data };
     return r.status >= 200 && r.status < 300 ? { ok: true } : { ok: false, error: 'inviteFail' };
@@ -956,8 +967,20 @@ class Engine extends EventEmitter {
     ]);
     if (!this.s.champSelect) return;
     if (sub.status === 200 && Array.isArray(sub.data)) { this._subset = sub.data.map(Number); this.s.champSelect.subset = this._subset; }
-    this.s.champSelect.pickable = Array.isArray(p.data) ? p.data : [];
-    this.s.champSelect.bannable = Array.isArray(b.data) ? b.data : [];
+    let pick = Array.isArray(p.data) ? p.data : [];
+    let ban = Array.isArray(b.data) ? b.data : [];
+    // Algunas colas (por ejemplo Flex) dan la lista solo por la ruta del armado de equipos.
+    if (!ban.length || !pick.length) {
+      const [p2, b2] = await Promise.all([
+        pick.length ? null : this.lcu.request('GET', '/lol-lobby-team-builder/champ-select/v1/pickable-champion-ids'),
+        ban.length ? null : this.lcu.request('GET', '/lol-lobby-team-builder/champ-select/v1/bannable-champion-ids'),
+      ]);
+      if (p2 && Array.isArray(p2.data)) pick = p2.data;
+      if (b2 && Array.isArray(b2.data)) ban = b2.data;
+      if (!this.s.champSelect) return;
+    }
+    this.s.champSelect.pickable = pick;
+    this.s.champSelect.bannable = ban;
     await this._maybePrepick();
     await this._maybePreban();
     this._previewAutoPick();
@@ -984,14 +1007,20 @@ class Engine extends EventEmitter {
   async _maybePreban() {
     const cs = this.s.champSelect;
     if (!cs || !cs.myTurn || cs.myTurn.type !== 'ban' || cs.phase === 'PLANNING') return; // en la planificación todavía no se banea
-    if (!(cs.bannable || []).length) return; // todavía no hay lista, reintenta luego
     const turn = cs.myTurn;
     const pb = this.settings.preBan || {};
     if (!pb.championId && !(pb.autoBan && (pb.hates || []).length)) return;
     if (this._autoBanTurn === turn.id) return;
+    if (!(cs.bannable || []).length) {
+      // Sin lista de baneables (pasa en algunas colas): se pide de nuevo; si sigue vacía se sigue igual y el cliente decide.
+      let b = await this.lcu.request('GET', '/lol-champ-select/v1/bannable-champion-ids');
+      if (!(Array.isArray(b.data) && b.data.length)) b = await this.lcu.request('GET', '/lol-lobby-team-builder/champ-select/v1/bannable-champion-ids');
+      if (Array.isArray(b.data) && b.data.length && this.s.champSelect) this.s.champSelect.bannable = b.data;
+    }
     if (this._prebanTurn !== turn.id) {
       this._prebanTurn = turn.id;
       const target = this._banTarget();
+      if (this._diag) (this._diag.preBan = this._diag.preBan || []).push({ t: Date.now(), turnId: turn.id, phase: cs.phase, preBan: pb.championId || 0, hates: pb.hates || [], autoBan: !!pb.autoBan, bannable: (cs.bannable || []).length, target, hovered: turn.championId || 0, timeLeft: cs.timeLeftMs, infinite: !!cs.isInfinite });
       if (pb.championId && target !== Number(pb.championId)) this._alert('prebanFailed', { championId: pb.championId });
       if (!target) return;
       if (cs.isInfinite || cs.timeLeftMs == null) { this._autoBanTurn = turn.id; await this.lockIn(target); this._alert('autoBan', { championId: target }); return; }
@@ -1936,13 +1965,15 @@ class Engine extends EventEmitter {
       cosmeticsSet: d.cosmeticsSet || null,
       chatParticipants: d.chatParticipants || null,
       autoPick: d.autoPick || null,
+      preBan: d.preBan || null,
+      autoBan: d.autoBan || null,
       history: d.history || null,
       cellSummoners: d.cellSummoners || null,
       helpSwap,
       dominationSlots: styleDump,
       events: d.events,
     };
-    try { d.fs.writeFileSync(d.file, JSON.stringify(out, null, 1)); } catch (_) {}
+    try { d.fs.writeFileSync(d.file, JSON.stringify(out, hideSecrets, 1)); } catch (_) {}
   }
 
   // ---------- chat del champ select ----------

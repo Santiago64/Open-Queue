@@ -26,7 +26,8 @@ async function startMock() {
   };
   const lobbyObj = () => ({
     gameConfig: { queueId: st.queueId, gameMode: st.queueId === 480 ? 'SWIFTPLAY' : st.queueId === 450 ? 'ARAM' : st.queueId === 2400 ? 'KIWI' : 'CLASSIC', showQuickPlaySlotSelection: st.queueId === 480, showPositionSelector: [400, 420, 440].includes(st.queueId) },
-    members: Array.from({ length: st.party || 1 }, (_, i) => ({ summonerId: i })),
+    members: Array.from({ length: st.party || 1 }, (_, i) => ({ summonerId: i })).concat((st.extraMembers || []).map((sid) => ({ summonerId: sid }))),
+    invitations: st.lobbyInvites || [],
     multiUserChatId: 'muc-1', multiUserChatPassword: 'pw-secreta', mucJwtDto: { channelClaim: 'muc-1', domain: 'lol-pre-game', jwt: 'jwt-secreto' },
     localMember: { isLeader: st.leader !== false, playerSlots: st.queueId === 480 ? st.slots : [], firstPositionPreference: st.firstPos || '', secondPositionPreference: st.secondPos || '' },
   });
@@ -142,6 +143,8 @@ async function startMock() {
       }
       if (key === 'GET /lol-champ-select/v1/pickable-champion-ids') return ok(st.pickable);
       if (key === 'GET /lol-champ-select/v1/bannable-champion-ids') return ok(st.bannable);
+      if (key === 'GET /lol-lobby-team-builder/champ-select/v1/bannable-champion-ids') return ok(st.bannableTB || st.bannable);
+      if (key === 'GET /lol-lobby-team-builder/champ-select/v1/pickable-champion-ids') return ok(st.pickable);
       if (key === 'GET /lol-chat/v1/friends') return ok([
         { summonerId: 11, gameName: 'Amigo Uno', gameTag: 'AR1', availability: 'chat', product: 'league_of_legends', lol: { gameStatus: 'outOfGame' } },
         { summonerId: 12, gameName: 'Amigo Dos', gameTag: 'AR2', availability: 'dnd', product: 'league_of_legends', icon: 5, lol: { gameStatus: 'inGame', gameQueueType: 'KIWI', timeStamp: Date.now() - 184000 } },

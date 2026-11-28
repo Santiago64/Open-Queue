@@ -267,8 +267,16 @@ async function waitFor(fn, label, ms = 6000) {
   const ic = mock.calls.filter((c) => c.method === 'POST' && c.url === '/lol-lobby/v2/lobby/invitations').pop();
   assert.deepStrictEqual(ic.body, [{ toSummonerId: 11 }]);
   mock.st.inviteFails = true; assert.strictEqual((await ask('inviteFriend', { summonerId: 11 })).error, 'inviteFail'); mock.st.inviteFails = false;
+  // Quien ya está en la sala no se ofrece ni se puede invitar; los que tienen invitación pendiente se ven como enviada.
+  mock.st.extraMembers = [11]; mock.st.lobbyInvites = [{ toSummonerId: 12, state: 'Pending' }];
+  const fr2 = await ask('friends', {});
+  const uno = fr2.friends.find((f) => f.id === 11); const dos = fr2.friends.find((f) => f.id === 12);
+  assert(uno.inLobby && !dos.inLobby && dos.invited, 'marcas de sala e invitación');
+  assert.strictEqual(fr2.friends[fr2.friends.length - 1].id, 11, 'los de la sala van al final');
+  assert.strictEqual((await ask('inviteFriend', { summonerId: 11 })).error, 'inLobby');
+  mock.st.extraMembers = []; mock.st.lobbyInvites = [];
   await ask('leaveLobby', {}); await waitFor(() => state.phase === 'None', 'fuera inv');
-  ok('invitar amigos: lista de conectados con estado y envío de invitación a la sala');
+  ok('invitar amigos: lista de conectados con estado y envío de invitación; los que ya están en tu sala no se pueden invitar');
 
   // ---- Emotes y ward
   const cd = await ask('cosmeticsData', {});
