@@ -165,3 +165,8 @@
 - Arreglo: en Flex el ban preparado y el ban automático no hacían nada. La lista de campeones baneables venía vacía por la ruta que usaba la app; ahora se toma de la otra ruta del cliente y, si sigue vacía, se intenta igual.
 - Invitar amigos: los que ya están en tu sala aparecen al final como "En tu sala" y no se pueden invitar. Los que tienen invitación pendiente se ven como "Enviada".
 - Diagnóstico: anota qué decidió el ban preparado en cada turno, y oculta todas las claves y tokens (también los del chat del champ select).
+
+##  v0.8.21
+- Arreglo del ban automático en Flex: el cliente mandaba una lista de baneables con un solo campeón y la app descartaba todos tus odiados y tu ban preparado. Ahora una lista tan corta no se toma en cuenta y el ban se hace igual (si no se puede, el cliente lo rechaza).
+- Orden de pick: si ya pickeaste, o el compañero ya pickeó, no se ofrece pedir el cambio (el cliente lo seguía mostrando).
+- Invitar amigos: los que están en partida, en cola o eligiendo campeón aparecen como "Ocupado" y no se pueden invitar.

@@ -1284,8 +1284,10 @@
       const items = FR.list.filter((f) => !q || f.name.toLowerCase().includes(q));
       // Los que ya están en tu sala no se pueden invitar (se ven apagados, al final).
       const row = (f) => {
-        const off = f.status === 'mobile' || f.inLobby;
-        const btn = f.inLobby ? `<b class="frbtn" style="opacity:.6">${t('frInLobby')}</b>` : f.status === 'mobile' ? '' : `<b class="frbtn">${FR.sent.has(f.id) || f.invited ? t('frSent') : t('frInvite')}</b>`;
+        // En partida, en cola o eligiendo campeón no pueden entrar a tu sala: no se ofrece invitarlos.
+        const busy = f.status === 'ingame' || f.status === 'busy';
+        const off = f.status === 'mobile' || f.inLobby || busy;
+        const btn = f.inLobby ? `<b class="frbtn" style="opacity:.6">${t('frInLobby')}</b>` : busy ? `<b class="frbtn" style="opacity:.6">${t('frBusy')}</b>` : f.status === 'mobile' ? '' : `<b class="frbtn">${FR.sent.has(f.id) || f.invited ? t('frSent') : t('frInvite')}</b>`;
         return `<div class="frrow ${off ? 'off' : ''}" data-fid="${f.id}" ${off ? '' : `data-act="invFriend" data-k="${f.id}"`}>${friendAvatar(f)}<div class="frinfo"><div class="frname">${esc(f.name)}</div><div class="frtext">${esc(friendText(f))}</div></div>${btn}</div>`;
       };
       h += items.length ? `<div class="frlist">${items.map(row).join('')}</div>` : `<p class="dim">${t('frNone')}</p>`;

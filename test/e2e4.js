@@ -390,6 +390,28 @@ const game = (championId, lane, role, win) => ({ gameMode: 'CLASSIC', participan
   assert.strictEqual(await finish(br.n0), 3);
   mock.st.bannable = mock.st.bannableTB; mock.st.bannableTB = null;
   ok('ban automático en Flex: la lista de baneables se toma de la otra ruta del cliente');
+  // Lista de baneables rara (Flex mandó una lista con 1 solo campeón): no se confía y se banea igual.
+  mock.st.bannableTB = null; const keepBan = mock.st.bannable; mock.st.bannable = [7];
+  br = await banRun();
+  assert.strictEqual(br.hov, 3, 'con lista de 1');
+  assert.strictEqual(await finish(br.n0), 3);
+  mock.st.bannable = keepBan;
+  ok('ban automático: si el cliente manda una lista de baneables incompleta, igual se banea');
+
+  // Orden de pick: si ya pickeaste (o el compañero ya pickeó), no se ofrece el cambio.
+  mock.startChampSelect();
+  mock.updateSession((s) => {
+    s.actions = [[{ id: 70, actorCellId: 0, type: 'pick', championId: 22, completed: true, isInProgress: false }], [{ id: 71, actorCellId: 2, type: 'pick', championId: 0, completed: false, isInProgress: true }]];
+    s.pickOrderSwaps = [{ id: 5, cellId: 2, state: 'AVAILABLE' }];
+  });
+  await waitFor(() => state.champSelect && state.champSelect.order && state.champSelect.order.some((o) => o.id === 70), 'sesión con pick hecho');
+  assert.strictEqual(state.champSelect.swapOpts.pickOrder.length, 0, 'sin cambio de orden si ya pickeaste');
+  assert.strictEqual((await ask('swap', { kind: 'pickOrder', swapId: 5, action: 'request' })).error, 'alreadyPicked');
+  mock.updateSession((s) => { s.actions[0][0].completed = false; s.actions[0][0].isInProgress = false; s.actions[1][0].completed = true; s.pickOrderSwaps = [{ id: 5, cellId: 2, state: 'AVAILABLE' }, { id: 6, cellId: 3, state: 'AVAILABLE' }]; });
+  await waitFor(() => state.champSelect.swapOpts.pickOrder.length === 1, 'solo con quien no pickeó');
+  assert.strictEqual(state.champSelect.swapOpts.pickOrder[0].cellId, 3);
+  mock.setPhase('None'); await sleep(300);
+  ok('orden de pick: no se puede pedir si ya pickeaste ni con quien ya pickeó');
   await ask('setHates', { autoBan: false });
 
   // 5l) Planificación: el pick preparado se muestra a tu equipo antes de los baneos (sin banearlo).

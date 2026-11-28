@@ -815,6 +815,10 @@ class Engine extends EventEmitter {
     // Lo que vos podés pedir (AVAILABLE) o ya pediste (SENT), por compañero.
     const opts = (arr) => (Array.isArray(arr) ? arr : []).filter((x) => x && (x.state === 'AVAILABLE' || x.state === 'SENT')).map((x) => ({ id: x.id, cellId: x.cellId, sent: x.state === 'SENT' }));
     const swapOpts = { pickOrder: opts(sess.pickOrderSwaps), position: opts(sess.positionSwaps), champion: opts(sess.trades || sess.championSwaps) };
+    // Cambiar orden de pick no tiene sentido si vos o ese compañero ya confirmaron su campeón (el cliente igual lo ofrece).
+    const pickedCells = new Set(flat.filter((a) => a.type === 'pick' && a.completed).map((a) => a.actorCellId));
+    swapOpts.pickOrder = pickedCells.has(local) ? swapOpts.pickOrder.filter((x) => x.sent) : swapOpts.pickOrder.filter((x) => x.sent || !pickedCells.has(x.cellId));
+    this._pickedCells = pickedCells;
     const bansDone = bans.every((o) => o.completed);
     // Baneados: los de la lista oficial y también los baneos ya confirmados (la lista a veces llega tarde).
     const bannedSet = new Set([...((sess.bans && sess.bans.myTeamBans) || []), ...((sess.bans && sess.bans.theirTeamBans) || []),
@@ -914,6 +918,7 @@ class Engine extends EventEmitter {
     if (action === true) action = 'accept';
     if (action === false) action = 'decline';
     if (!p || id === undefined || !['accept', 'decline', 'request', 'cancel'].includes(action)) return { ok: false };
+    if (kind === 'pickOrder' && action === 'request' && this._pickedCells && this.s.champSelect && this._pickedCells.has(this.s.champSelect.localCell)) return { ok: false, error: 'alreadyPicked' };
     const cands = kind === 'champion' ? ['champion-swaps', 'trades'] : [p];
     if (kind === 'champion' && this._tradePath) cands.sort((a, b) => (b === this._tradePath) - (a === this._tradePath));
     let r;
@@ -970,13 +975,13 @@ class Engine extends EventEmitter {
     let pick = Array.isArray(p.data) ? p.data : [];
     let ban = Array.isArray(b.data) ? b.data : [];
     // Algunas colas (por ejemplo Flex) dan la lista solo por la ruta del armado de equipos.
-    if (!ban.length || !pick.length) {
+    if (ban.length < 20 || !pick.length) {
       const [p2, b2] = await Promise.all([
         pick.length ? null : this.lcu.request('GET', '/lol-lobby-team-builder/champ-select/v1/pickable-champion-ids'),
-        ban.length ? null : this.lcu.request('GET', '/lol-lobby-team-builder/champ-select/v1/bannable-champion-ids'),
+        ban.length >= 20 ? null : this.lcu.request('GET', '/lol-lobby-team-builder/champ-select/v1/bannable-champion-ids'),
       ]);
       if (p2 && Array.isArray(p2.data)) pick = p2.data;
-      if (b2 && Array.isArray(b2.data)) ban = b2.data;
+      if (b2 && Array.isArray(b2.data) && b2.data.length > ban.length) ban = b2.data;
       if (!this.s.champSelect) return;
     }
     this.s.champSelect.pickable = pick;
@@ -995,7 +1000,9 @@ class Engine extends EventEmitter {
     const pb = this.settings.preBan || {};
     const list = [Number(pb.championId) || 0].concat(pb.autoBan ? (pb.hates || []).map(Number) : []).filter((x) => x > 0);
     if (!list.length) return 0;
-    const bannable = new Set((cs.bannable || []).map(Number));
+    // Si la lista de baneables es muy corta no es confiable (en Flex llegó con 1 solo): se ignora y decide el cliente.
+    const bl = (cs.bannable || []).map(Number).filter((x) => x > 0);
+    const bannable = new Set(bl.length >= 20 ? bl : []);
     const banned = new Set((cs.banned || []).map(Number));
     // Lo que ya marcaron tus compañeros para banear, lo que quieren jugar ellos y tu propio pick preparado no se banea.
     const allyBans = new Set((cs.order || []).filter((o) => o.type === 'ban' && o.ally && !o.mine && o.championId > 0).map((o) => o.championId));
@@ -1020,7 +1027,7 @@ class Engine extends EventEmitter {
     if (this._prebanTurn !== turn.id) {
       this._prebanTurn = turn.id;
       const target = this._banTarget();
-      if (this._diag) (this._diag.preBan = this._diag.preBan || []).push({ t: Date.now(), turnId: turn.id, phase: cs.phase, preBan: pb.championId || 0, hates: pb.hates || [], autoBan: !!pb.autoBan, bannable: (cs.bannable || []).length, target, hovered: turn.championId || 0, timeLeft: cs.timeLeftMs, infinite: !!cs.isInfinite });
+      if (this._diag) (this._diag.preBan = this._diag.preBan || []).push({ t: Date.now(), turnId: turn.id, phase: cs.phase, preBan: pb.championId || 0, hates: pb.hates || [], autoBan: !!pb.autoBan, bannable: (cs.bannable || []).length, bannableSample: (cs.bannable || []).slice(0, 5), banned: cs.banned || [], allyWants: (cs.myTeam || []).map((p) => [p.championId, p.intent]), target, hovered: turn.championId || 0, timeLeft: cs.timeLeftMs, infinite: !!cs.isInfinite });
       if (pb.championId && target !== Number(pb.championId)) this._alert('prebanFailed', { championId: pb.championId });
       if (!target) return;
       if (cs.isInfinite || cs.timeLeftMs == null) { this._autoBanTurn = turn.id; await this.lockIn(target); this._alert('autoBan', { championId: target }); return; }
@@ -1042,7 +1049,8 @@ class Engine extends EventEmitter {
     const b = await this.lcu.request('GET', '/lol-champ-select/v1/bannable-champion-ids');
     if (Array.isArray(b.data) && b.data.length && this.s.champSelect) this.s.champSelect.bannable = b.data;
     const hovered = Number(cs.myTurn.championId) || 0;
-    const bannable = new Set(((this.s.champSelect && this.s.champSelect.bannable) || []).map(Number));
+    const bl = ((this.s.champSelect && this.s.champSelect.bannable) || []).map(Number).filter((x) => x > 0);
+    const bannable = new Set(bl.length >= 20 ? bl : []);
     const champ = hovered && (!bannable.size || bannable.has(hovered)) && !(cs.banned || []).includes(hovered) ? hovered : this._banTarget();
     if (this._diag) (this._diag.autoBan = this._diag.autoBan || []).push({ t: Date.now(), turnId, hovered, champ });
     if (!champ) return;
