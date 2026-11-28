@@ -846,6 +846,7 @@
           <button class="btn small" data-act="rulePickMove" data-i="${i}" data-j="${j}" data-v="-1" ${j === 0 ? 'disabled' : ''}>&uarr;</button>
           <button class="btn small" data-act="rulePickMove" data-i="${i}" data-j="${j}" data-v="1" ${j === r.picks.length - 1 ? 'disabled' : ''}>&darr;</button>
           <button class="btn small" data-act="rulePickDel" data-i="${i}" data-j="${j}">&#10005;</button></div>
+        ${p.c && r.kind !== 'block' ? (() => { const set = ((state.settings.favorites || {}).runeSets || {})[String(p.c)]; return `<div class="row" style="gap:6px;margin-top:6px;align-items:center"><small class="dim">${t('ruleRunes')}:</small><span style="flex:1;display:flex;gap:3px;flex-wrap:wrap">${set ? set.selectedPerkIds.slice(0, 6).map((id) => `<div class="portrait sm" style="width:22px;height:22px">${perkImg(id)}</div>`).join('') : `<small class="dim">${t('runeSetNone')}</small>`}</span><button class="btn small" data-act="ruleRuneSet" data-k="${p.c}" data-lane="${r.lane || ''}">${set ? t('runesEdit') : t('runeSetBuild')}</button></div>`; })() : ''}
         <div class="row wrap" style="gap:6px;margin-top:6px;align-items:center"><small class="dim">${t('ruleAvoid')}</small>${p.avoid.map((k) => chipChamp(k, 'ruleAvoidDel', `data-i="${i}" data-j="${j}" data-k="${k}"`)).join('')}<button class="btn small" data-act="ruleAdd" data-kind="avoid" data-i="${i}" data-j="${j}">+</button></div></div>`).join('')}
       ${r.picks.length < 5 ? `<div class="row wrap" style="gap:6px"><button class="btn small" data-act="ruleAdd" data-kind="pick" data-i="${i}">+ ${t('ruleAddPick')}</button><select data-rule-addattr="${i}" style="flex:1;min-width:150px;padding:8px"><option value="">+ ${t('ruleAddAttr')}</option>${ATTRS.map((a) => `<option value="${a}">${t('attr_' + a)}</option>`).join('')}</select></div>` : ''}
       ${ruleLoadoutHtml(r, i)}`}</div>`).join('');
@@ -943,6 +944,7 @@
   }
 
   async function openRunes(slotIdx) {
+    RU.forSet = null;
     RU.slot = slotIdx === undefined || slotIdx === null ? null : slotIdx;
     RU.tab = 'mine'; RU.target = '';
     RU.custom = RU.custom || blankCustom();
@@ -963,11 +965,40 @@
     }
   }
 
+  // Set de runas de un campeón para las reglas: se arma una vez y se usa en todas las reglas donde aparezca ese campeón.
+  async function openRuneSet(champ, lane) {
+    RU.forSet = champ; RU.slot = null; RU.tab = 'custom'; RU.target = '';
+    RU.data = null; RU.forChamp = champ; RU.custom = blankCustom();
+    $('slTitle').textContent = t('runes');
+    renderRunes();
+    RU.loading = true;
+    const r = await request('runeData', { championId: champ, position: lane || '' });
+    RU.loading = false;
+    if (r && r.ok) {
+      RU.data = r;
+      const set = ((state.settings.favorites || {}).runeSets || {})[String(champ)];
+      if (set) { editFromRecommended(set); return; }
+    }
+    renderRunes();
+  }
+  async function saveSet(page) {
+    const champ = RU.forSet;
+    const r = await request('setFavorites', { runeSet: { championId: champ, page: page ? { primaryStyleId: page.primaryStyleId, subStyleId: page.subStyleId, selectedPerkIds: page.selectedPerkIds } : null } });
+    if (r && r.ok) {
+      // Se actualiza ya en pantalla (el estado del PC llega un momento después).
+      const f = state.settings.favorites = state.settings.favorites || {}; const sets = Object.assign({}, f.runeSets || {});
+      if (page) sets[String(champ)] = { primaryStyleId: page.primaryStyleId, subStyleId: page.subStyleId, selectedPerkIds: page.selectedPerkIds.slice() }; else delete sets[String(champ)];
+      f.runeSets = sets;
+      toast(page ? `${t('runeSetSaved')}: ${champName(champ)}` : t('runeSetDeleted'), 2500); RU.forSet = null; openRules(); }
+    else toast(t('errGeneric'), 4000);
+  }
+
   function renderRunes() {
     if ($('sheetList').classList.contains('hidden') || $('slTitle').textContent !== t('runes')) return;
-    const tabs = [['mine', 'runesMine'], ['rec', 'runesRec'], ['custom', 'runesCustom']]
+    const tabs = (RU.forSet ? [['rec', 'runesRec'], ['custom', 'runesCustom']] : [['mine', 'runesMine'], ['rec', 'runesRec'], ['custom', 'runesCustom']])
       .map(([k, l]) => `<button class="chip ${RU.tab === k ? 'on' : ''}" data-act="rTab" data-v="${k}">${t(l)}</button>`).join('');
-    let h = `<div class="chips" style="margin-bottom:12px">${tabs}</div>`;
+    let h = RU.forSet ? `<div class="row" style="gap:8px;margin-bottom:10px"><button class="btn small" data-act="openRules">&larr; ${t('rulesTitle')}</button>${champImg(RU.forSet, 'sm')}<b style="flex:1">${t('runeSetFor')} ${esc(champName(RU.forSet))}</b></div><p class="note" style="margin:0 0 10px">${t('runeSetHelp')}</p>` : '';
+    h += `<div class="chips" style="margin-bottom:12px">${tabs}</div>`;
     if (RU.tab === 'mine') {
       const qsel = RU.slot !== null && state.lobby && state.lobby.slots[RU.slot] && state.lobby.slots[RU.slot].perks;
       const same = (p) => qsel && JSON.stringify(p.selectedPerkIds) === JSON.stringify(qsel.selectedPerkIds);
@@ -980,7 +1011,7 @@
       const rec = RU.data.recommended || [];
       h += rec.length ? rec.map((pg, i) => `<div class="card"><div class="row"><h2 style="font-size:13px;flex:1">${esc(pg.name || `${t('recN')} ${i + 1}`)}</h2></div>
         <div class="row wrap" style="gap:6px;margin:8px 0">${pg.selectedPerkIds.map((id) => `<div class="portrait sm">${perkImg(id)}</div>`).join('')}</div>
-        <div class="row"><button class="btn primary small" data-act="rUseRec" data-i="${i}">${t('runesUse')}</button><button class="btn small" data-act="rEditRec" data-i="${i}">${t('runesEdit')}</button></div></div>`).join('')
+        <div class="row"><button class="btn primary small" data-act="rUseRec" data-i="${i}">${RU.forSet ? t('runeSetUseThis') : t('runesUse')}</button><button class="btn small" data-act="rEditRec" data-i="${i}">${t('runesEdit')}</button></div></div>`).join('')
         : `<p class="dim">${RU.forChamp ? t('runesNoRec') : t('runesNoChamp')}</p>`;
     } else {
       h += customEditorHtml();
@@ -1010,6 +1041,10 @@
       h += `<h3 style="font-size:12px;color:var(--dim);margin:12px 0 6px">${t('runesShards')}</h3>${shardRows().map((row, r) => `<div class="row wrap" style="gap:6px;margin-bottom:6px">${row.map((id) => perkBtn(id, c.shards[r] === id, 'rShard', r)).join('')}</div>`).join('')}`;
     }
     const ok = !!customIds();
+    if (RU.forSet) {
+      const has = ((state.settings.favorites || {}).runeSets || {})[String(RU.forSet)];
+      return h + `<button class="btn primary block" style="margin-top:14px" data-act="rSave" ${ok ? '' : 'disabled'}>${ok ? t('runeSetSave') : t('runesNeed')}</button>${has ? `<button class="btn block" style="margin-top:8px" data-act="runeSetDel">${t('runeSetDelete')}</button>` : ''}`;
+    }
     if (RU.slot === null) {
       const own = state.runes.pages.filter((p) => !p.temp);
       h += `<div class="dim" style="font-size:12px;margin:14px 0 6px">${t('runesSaveIn')}</div><select id="ruTarget" class="select" style="width:100%"><option value="">${t('runesSaveNew')}${state.runes.canAdd === false ? ' ✕' : ''}</option>${own.map((p) => `<option value="${p.id}" ${String(RU.target) === String(p.id) ? 'selected' : ''}>${esc(p.name)}</option>`).join('')}</select>
@@ -1306,7 +1341,9 @@
         renderRunes(); break;
       }
       case 'rShard': RU.custom.shards[Number(el.getAttribute('data-row'))] = Number(el.getAttribute('data-id')); renderRunes(); break;
-      case 'rSave': { const ids = customIds(); if (ids) saveCustom({ name: 'Open Queue', primaryStyleId: RU.custom.primary, subStyleId: RU.custom.sub, selectedPerkIds: ids }, RU.slot === null && RU.target ? Number(RU.target) : undefined, RU.slot === null && !RU.target ? (($('ruName') && $('ruName').value) || RU.newName || '') : undefined); break; }
+      case 'runeSetDel': saveSet(null); break;
+      case 'ruleRuneSet': openRuneSet(Number(el.getAttribute('data-k')), el.getAttribute('data-lane') || ''); break;
+      case 'rSave': { const ids = customIds(); if (ids && RU.forSet) { saveSet({ primaryStyleId: RU.custom.primary, subStyleId: RU.custom.sub, selectedPerkIds: ids }); break; } if (ids) saveCustom({ name: 'Open Queue', primaryStyleId: RU.custom.primary, subStyleId: RU.custom.sub, selectedPerkIds: ids }, RU.slot === null && RU.target ? Number(RU.target) : undefined, RU.slot === null && !RU.target ? (($('ruName') && $('ruName').value) || RU.newName || '') : undefined); break; }
       case 'rEditOwn': {
         const pg = state.runes.pages.find((p) => p.id === Number(el.getAttribute('data-k')));
         if (pg && pg.selectedPerkIds.length === 9) { RU.target = pg.id; editFromRecommended(pg); }
@@ -1314,7 +1351,8 @@
       }
       case 'rUseRec': {
         const pg = RU.data.recommended[Number(el.getAttribute('data-i'))];
-        if (RU.slot !== null) saveCustom(pg);
+        if (RU.forSet) saveSet(pg);
+        else if (RU.slot !== null) saveCustom(pg);
         else {
           request('useRunes', { page: pg, championId: RU.forChamp }).then((r) => {
             if (r && r.ok) { toast(t('runesActive'), 2000); closeSheets(); }

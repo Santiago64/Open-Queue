@@ -134,3 +134,9 @@
 - **Hechizos recomendados** (interruptor nuevo): si la regla no dice nada, se ponen los que más usaste vos con ese campeón en esa línea en tus últimas partidas; si no hay datos, unos típicos de la línea.
 - Arreglo: con "Poner runas recomendadas", la lista para elegir qué página usar se cerraba sola al segundo. Ahora la pantalla no se redibuja mientras la lista está abierta.
 - README: vuelven los videos de demo y `npm test` falla si alguna vez se pierden.
+
+##  v0.8.15
+- **Set de runas por campeón**: desde la regla, en cada campeón, "Armar" abre el editor de runas para ese campeón. Lo armás una vez (desde cero o partiendo de una recomendada) y se usa en todas las reglas donde aparezca ese campeón.
+- Cuando el pick automático elige ese campeón, la app escribe tu set en la página temporal del cliente. No ocupa ninguna de tus páginas, así que podés tener sets para todos los campeones que quieras.
+- Si la regla dice "recomendadas" o una página tuya, eso gana sobre el set.
+- Si el cliente no deja crear la página temporal, se usa la página de repuesto de Ajustes (si elegiste una) o te avisa.

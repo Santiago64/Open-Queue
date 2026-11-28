@@ -94,6 +94,14 @@ function cleanRules(list) {
   });
 }
 
+function cleanRunePage(p) {
+  if (!p) return null;
+  const ids = Array.isArray(p.selectedPerkIds) ? p.selectedPerkIds.map(Number) : [];
+  const ps = Number(p.primaryStyleId); const ss = Number(p.subStyleId);
+  if (ids.length !== 9 || ids.some((n) => !(n > 0)) || !(ps > 0) || !(ss > 0) || ps === ss) return null;
+  return { primaryStyleId: ps, subStyleId: ss, selectedPerkIds: ids };
+}
+
 function lcuMessage(r) {
   const d = r && r.data;
   if (!d) return '';
@@ -1001,6 +1009,14 @@ class Engine extends EventEmitter {
     if (patch.runePageId !== undefined) f.runePageId = Number(patch.runePageId) || 0;
     if (patch.autoSpells !== undefined) { f.autoSpells = !!patch.autoSpells; if (f.autoSpells && this.s.phase === 'ChampSelect') this._loadHistory(); }
     if (Array.isArray(patch.rules)) f.rules = cleanRules(patch.rules);
+    if (patch.runeSet && Number(patch.runeSet.championId) > 0) {
+      // Guarda (o borra, con page null) el set de runas de un campeón.
+      const sets = Object.assign({}, f.runeSets || {});
+      const k = String(Number(patch.runeSet.championId));
+      const pg = cleanRunePage(patch.runeSet.page);
+      if (pg) sets[k] = pg; else delete sets[k];
+      if (Object.keys(sets).length <= 300) f.runeSets = sets;
+    }
     this.settings.favorites = f;
     this.store.save();
     if (f.useHistory && this.s.phase === 'ChampSelect') this._loadHistory();
@@ -1264,6 +1280,9 @@ class Engine extends EventEmitter {
       this._alert(ok.ok ? 'autoRunes' : 'autoRunesFailed', { name: ((this.s.runes.pages || []).find((p) => p.id === Number(r.runes)) || {}).name || '' });
       return;
     }
+    // Set de runas que armaste para ese campeón (sirve en todas tus reglas).
+    const set = (f.runeSets || {})[String(Number(champ))];
+    if (set) return this._autoRunes(champ, log, set);
     if (f.autoRunes) return this._autoRunes(champ, log);
   }
 
@@ -1304,14 +1323,19 @@ class Engine extends EventEmitter {
 
   // Runas automáticas: después del pick automático se aplica la primera página recomendada por el propio cliente
   // para ese campeón y tu línea (las mismas que ves en "Runas recomendadas"). Va sobre la página temporal del cliente.
-  async _autoRunes(championId, log) {
+  // own: un set de runas armado por vos (en las reglas); si no, la primera recomendada por el cliente.
+  async _autoRunes(championId, log, own) {
     try {
       const cs = this.s.champSelect;
       if (!cs || cs.benchEnabled || [2400, 3270].includes(Number(cs.queueId)) || cs.subsetPicks || this.s.gameMode === 'KIWI') return; // modos sin runas
       const me = (cs.myTeam || []).find((p) => p.isMe) || {};
-      const d = await this.runeData(championId, normPos(me.position));
-      const page = d && d.ok && d.recommended && d.recommended[0];
-      if (log) log.runes = page ? { name: page.name, primary: page.primaryStyleId } : 'none';
+      let page = null;
+      if (own) page = Object.assign({ name: 'Open Queue' }, own);
+      else {
+        const d = await this.runeData(championId, normPos(me.position));
+        page = d && d.ok && d.recommended && d.recommended[0];
+      }
+      if (log) log.runes = page ? { name: page.name, primary: page.primaryStyleId, own: !!own } : 'none';
       if (!page) { this._alert('autoRunesFailed'); return; }
       const pos = normPos(me.position) || 'none';
       let r = await this.useRunes(page, championId);

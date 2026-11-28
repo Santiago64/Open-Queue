@@ -14,7 +14,7 @@ const DEFAULTS = {
     roles: { first: '', second: '' }, // rol principal y secundario para Normal y Clasificatoria
     // Hasta 3 favoritos. autoPick: si llega el final de tu turno sin pick, se elige uno solo.
     // useHistory: ordena y recomienda según tus partidas (y la línea que te tocó).
-    favorites: { ids: [], autoPick: false, useHistory: false, when: 'end', autoRunes: false, runePageId: 0, rules: [], autoSpells: false }, // when: 'end' (segundo 0) | 'start' (apenas te toca)
+    favorites: { ids: [], autoPick: false, useHistory: false, when: 'end', autoRunes: false, runePageId: 0, rules: [], autoSpells: false, runeSets: {} }, // runeSets: { championId: página de runas armada en las reglas } // when: 'end' (segundo 0) | 'start' (apenas te toca)
   },
   pairing: { code: null, tokens: [] },
 };

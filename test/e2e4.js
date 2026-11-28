@@ -301,6 +301,46 @@ const game = (championId, lane, role, win) => ({ gameMode: 'CLASSIC', participan
   ok('hechizos recomendados: sin regla, se ponen los típicos de la línea (o los que más usaste)');
   await ask('setFavorites', { autoSpells: false, ids: [22, 266, 1] });
 
+  // 5i) Set de runas armado por campeón: se escribe en la página temporal, sin usar tus páginas.
+  const mySet = { primaryStyleId: 8000, subStyleId: 8100, selectedPerkIds: [8008, 9101, 9105, 8017, 8128, 8120, 5005, 5010, 5013] };
+  await ask('setFavorites', { runeSet: { championId: 103, page: mySet } });
+  await ask('setFavorites', { runeSet: { championId: 2, page: { primaryStyleId: 8000, subStyleId: 8000, selectedPerkIds: [1, 2] } } });
+  await waitFor(() => (state.settings.favorites.runeSets || {})['103'], 'set guardado');
+  assert(!state.settings.favorites.runeSets['2'], 'un set inválido no se guarda');
+  mock.st.pages = fullPages();
+  await ask('setFavorites', { autoRunes: false, rules: [{ picks: [{ c: 103 }] }] });
+  const setPick = async (actionId) => {
+    const n0 = mock.calls.length;
+    mock.st.pages = fullPages();
+    mock.startChampSelect();
+    mock.updateSession((s) => {
+      s.myTeam[0].assignedPosition = 'top';
+      s.actions = [[{ id: actionId, actorCellId: 0, type: 'pick', championId: 0, completed: false, isInProgress: true }]];
+      s.timer = { phase: 'BAN_PICK', adjustedTimeLeftInPhase: 1200, totalTimeInPhase: 30000, isInfinite: false };
+    });
+    const na = alerts.length;
+    await waitFor(() => alerts.slice(na).find((a) => a.kind === 'autoRunes' || a.kind === 'autoRunesNoSlot'), 'aviso set ' + actionId, 8000);
+    await sleep(600);
+    const calls = mock.calls.slice(n0);
+    mock.setPhase('None'); await sleep(300);
+    return calls;
+  };
+  let sc = await setPick(50);
+  const wr = sc.find((c) => (c.method === 'PUT' || c.method === 'POST') && /^\/lol-perks\/v1\/pages/.test(c.url) && c.body && Array.isArray(c.body.selectedPerkIds));
+  assert(wr, 'escribe una página');
+  assert.deepStrictEqual(wr.body.selectedPerkIds, mySet.selectedPerkIds, 'con las runas del set');
+  assert.strictEqual(wr.body.primaryStyleId, 8000);
+  assert(!sc.find((c) => c.method === 'GET' && /recommended-pages\/champion\/103/.test(c.url)), 'no pide las recomendadas');
+  assert(mock.st.pages.filter((p) => !p.isTemporary).every((p) => p.name.startsWith('Mia ')), 'tus páginas no se tocan');
+  ok('set de runas por campeón: al pickearlo se escribe tu set en la página temporal, sin tocar tus páginas');
+  await ask('setFavorites', { rules: [{ picks: [{ c: 103 }], runes: 'rec' }] });
+  sc = await setPick(51);
+  assert(sc.find((c) => c.method === 'GET' && /recommended-pages\/champion\/103/.test(c.url)), 'la regla con "recomendadas" gana');
+  await ask('setFavorites', { runeSet: { championId: 103, page: null } });
+  await waitFor(() => !(state.settings.favorites.runeSets || {})['103'], 'set borrado');
+  ok('set de runas: "recomendadas" en la regla gana sobre el set, y el set se puede borrar');
+  await ask('setFavorites', { rules: [], autoPick: true });
+
   // 6) Chat en ranked: apodo que da el cliente por celda (en tu idioma), nunca "Aliado N".
   mock.st.chat = [];
   mock.st.cellSummoners = { 1: { cellId: 1, nameVisibilityType: 'HIDDEN', playerAlias: 'Dagarraco Rocoso' } };
