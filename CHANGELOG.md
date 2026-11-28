@@ -140,3 +140,12 @@
 - Cuando el pick automático elige ese campeón, la app escribe tu set en la página temporal del cliente. No ocupa ninguna de tus páginas, así que podés tener sets para todos los campeones que quieras.
 - Si la regla dice "recomendadas" o una página tuya, eso gana sobre el set.
 - Si el cliente no deja crear la página temporal, se usa la página de repuesto de Ajustes (si elegiste una) o te avisa.
+
+##  v0.8.16
+- **Ban automático**: el ban preparado ahora se marca al empezar tu turno de ban (tu equipo lo ve) y se confirma en el segundo 0 si no baneaste otro vos. Si marcaste otro campeón, se banea el tuyo.
+- **Campeones que odiás** (hasta 5, en la tarjeta de Ban preparado) con interruptor de **ban automático**: si no hay ban preparado o no está disponible, se banea el primero de la lista que se pueda. Nunca uno ya baneado, uno que un compañero marcó para banear o uno que quiere jugar alguien de tu equipo.
+- **Pick preparado visible**: se marca en la planificación (antes de los baneos) para que tu equipo vea lo que querés jugar.
+- **Hechizos con íconos** en las reglas (se tocan, máximo 2; en jungla Aplastar fijo).
+- **Hechizos por campeón**: en cada campeón de una regla podés fijar sus 2 hechizos. Valen en todas las reglas y ganan sobre los de la regla.
+- Reglas y lista de odiados: un campeón que ya está en esa lista aparece en gris ("YA ESTÁ") y no se puede volver a elegir.
+- Runas del set: primero se intenta la página temporal del cliente (pidiéndole que la cree si no hay). Solo si el cliente no la da se usa tu página "Open Queue". En tu prueba se había usado directo esa página.

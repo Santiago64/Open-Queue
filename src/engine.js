@@ -35,6 +35,7 @@ const NOISY_URIS = ['/lol-chat', '/riotclient', '/lol-patch', '/data-store', '/l
   '/lol-career', '/lol-account', '/lol-lcds', '/lol-player', '/lol-event', '/lol-pft', '/lol-yourshop', '/lol-vanguard'];
 
 const AUTO_PICK_MARGIN_MS = 700; // pick automático: cuánto antes del 0 se manda
+const AUTO_BAN_MARGIN_MS = 700; // ban automático: igual, cuánto antes del 0
 const AUTO_PICK_START_DELAY_MS = 1500; // modo "apenas te toca": espera para que se marque tu pick preparado
 
 // Línea del champ select ('top', 'jungle', 'middle', 'bottom', 'utility').
@@ -407,8 +408,9 @@ class Engine extends EventEmitter {
     if (chatWanted(p) && !chatWanted(prev)) this._startChat(); // chat de la sala
     if (!chatWanted(p) && chatWanted(prev)) this._stopChat();
     if (p === 'ChampSelect' && prev !== 'ChampSelect') {
-      this._prepickDone = false; this._prepickTries = 0;
+      this._prepickDone = false; this._prepickTries = 0; this._intentDone = false;
       this._autoPickTurn = null; this._autoPickStartFor = null;
+      this._prebanTurn = null; this._autoBanTurn = null; clearTimeout(this._autoBanTimer);
       this._loadChampInfo();
       this._loadHistory();
       this._lastMyTurnId = null;
@@ -915,21 +917,75 @@ class Engine extends EventEmitter {
     this._emitState();
   }
 
-  // Ban preparado: al llegar tu turno de ban, se banea solo el campeón que dejaste elegido.
+  // Ban preparado y lista de odiados. Al empezar tu turno de ban se marca (así tu equipo lo ve) y,
+  // si llegás al final sin banear vos, se confirma en el último segundo. Sin reloj se confirma enseguida.
+  _banTarget() {
+    const cs = this.s.champSelect;
+    if (!cs) return 0;
+    const pb = this.settings.preBan || {};
+    const list = [Number(pb.championId) || 0].concat(pb.autoBan ? (pb.hates || []).map(Number) : []).filter((x) => x > 0);
+    if (!list.length) return 0;
+    const bannable = new Set((cs.bannable || []).map(Number));
+    const banned = new Set((cs.banned || []).map(Number));
+    // Lo que ya marcaron tus compañeros para banear, lo que quieren jugar ellos y tu propio pick preparado no se banea.
+    const allyBans = new Set((cs.order || []).filter((o) => o.type === 'ban' && o.ally && !o.mine && o.championId > 0).map((o) => o.championId));
+    const allyWants = new Set((cs.myTeam || []).filter((p) => !p.isMe).flatMap((p) => [p.championId, p.intent]).map(Number).filter((x) => x > 0));
+    const mine = Number((this.settings.prePick || {}).championId) || 0;
+    return list.find((c) => (!bannable.size || bannable.has(c)) && !banned.has(c) && !allyBans.has(c) && !allyWants.has(c) && c !== mine) || 0;
+  }
+
   async _maybePreban() {
     const cs = this.s.champSelect;
-    const want = this.settings.preBan && this.settings.preBan.championId;
-    if (!cs || !want || !cs.myTurn || cs.myTurn.type !== 'ban' || this._prebanTurn === cs.myTurn.id) return;
+    if (!cs || !cs.myTurn || cs.myTurn.type !== 'ban' || cs.phase === 'PLANNING') return; // en la planificación todavía no se banea
     if (!(cs.bannable || []).length) return; // todavía no hay lista, reintenta luego
-    this._prebanTurn = cs.myTurn.id;
-    if (cs.bannable.includes(want)) await this.lockIn(want);
-    else this._alert('prebanFailed', { championId: want });
+    const turn = cs.myTurn;
+    const pb = this.settings.preBan || {};
+    if (!pb.championId && !(pb.autoBan && (pb.hates || []).length)) return;
+    if (this._autoBanTurn === turn.id) return;
+    if (this._prebanTurn !== turn.id) {
+      this._prebanTurn = turn.id;
+      const target = this._banTarget();
+      if (pb.championId && target !== Number(pb.championId)) this._alert('prebanFailed', { championId: pb.championId });
+      if (!target) return;
+      if (cs.isInfinite || cs.timeLeftMs == null) { this._autoBanTurn = turn.id; await this.lockIn(target); this._alert('autoBan', { championId: target }); return; }
+      // Se marca para que tu equipo lo vea (si no marcaste otro vos).
+      if (!turn.championId) await this.lcu.request('PATCH', `/lol-champ-select/v1/session/actions/${turn.id}`, { championId: target });
+    }
+    if (cs.isInfinite || cs.timeLeftMs == null) return;
+    // Se reprograma con cada actualización del reloj.
+    clearTimeout(this._autoBanTimer);
+    const wait = Math.max(0, cs.timeLeftMs - (cs.at ? Date.now() - cs.at : 0) - AUTO_BAN_MARGIN_MS);
+    this._autoBanTimer = setTimeout(() => this._autoBan(turn.id), wait);
+  }
+
+  // Último segundo del ban: se confirma lo que esté marcado (lo tuyo si cambiaste) o el ban preparado / un odiado disponible.
+  async _autoBan(turnId) {
+    const cs = this.s.champSelect;
+    if (!cs || !cs.myTurn || cs.myTurn.id !== turnId || cs.myTurn.type !== 'ban' || this._autoBanTurn === turnId) return;
+    this._autoBanTurn = turnId;
+    const b = await this.lcu.request('GET', '/lol-champ-select/v1/bannable-champion-ids');
+    if (Array.isArray(b.data) && b.data.length && this.s.champSelect) this.s.champSelect.bannable = b.data;
+    const hovered = Number(cs.myTurn.championId) || 0;
+    const bannable = new Set(((this.s.champSelect && this.s.champSelect.bannable) || []).map(Number));
+    const champ = hovered && (!bannable.size || bannable.has(hovered)) && !(cs.banned || []).includes(hovered) ? hovered : this._banTarget();
+    if (this._diag) (this._diag.autoBan = this._diag.autoBan || []).push({ t: Date.now(), turnId, hovered, champ });
+    if (!champ) return;
+    const r = await this.lockIn(champ);
+    if (r && r.ok) this._alert('autoBan', { championId: champ });
   }
 
   async _maybePrepick() {
     const cs = this.s.champSelect;
     const want = this.settings.prePick && this.settings.prePick.championId;
     if (this._prepickDone || !cs || !want || !cs.myPickAction || cs.myPickAction.completed) return;
+    // Planificación: se muestra a tu equipo lo que querés jugar (como cuando lo marcás en el cliente antes de los baneos).
+    if (cs.phase === 'PLANNING') {
+      if (!this._intentDone && !cs.myPickAction.championId && (!cs.pickable.length || cs.pickable.includes(want))) {
+        this._intentDone = true;
+        await this.lcu.request('PATCH', `/lol-champ-select/v1/session/actions/${cs.myPickAction.id}`, { championId: want });
+      }
+      return;
+    }
     // Nunca se marca mientras haya baneos pendientes ni durante tu turno de ban: evita que se banee tu propio pick.
     if (!cs.bansDone || (cs.myTurn && cs.myTurn.type === 'ban')) return;
     if (!cs.pickable.length) return; // todavía no hay lista, reintenta luego
@@ -991,6 +1047,16 @@ class Engine extends EventEmitter {
     this._emitState();
   }
 
+  // Campeones que odiás (hasta 5). autoBan: si llegás al final de tu ban sin banear, se banea el primero disponible.
+  setHates(patch) {
+    const pb = this.settings.preBan;
+    if (Array.isArray(patch.ids)) pb.hates = [...new Set(patch.ids.map(Number).filter((x) => x > 0))].slice(0, 5);
+    if (patch.autoBan !== undefined) pb.autoBan = !!patch.autoBan;
+    this._prebanTurn = null;
+    this.store.save();
+    this._emitState();
+  }
+
   setPrePick(championId) {
     this.settings.prePick.championId = championId ? Number(championId) : null;
     this.store.save();
@@ -1016,6 +1082,14 @@ class Engine extends EventEmitter {
       const pg = cleanRunePage(patch.runeSet.page);
       if (pg) sets[k] = pg; else delete sets[k];
       if (Object.keys(sets).length <= 300) f.runeSets = sets;
+    }
+    if (patch.spellSet && Number(patch.spellSet.championId) > 0) {
+      // Hechizos fijos de un campeón (o null para borrarlos).
+      const sets = Object.assign({}, f.spellSets || {});
+      const k = String(Number(patch.spellSet.championId));
+      const ids = [...new Set((Array.isArray(patch.spellSet.ids) ? patch.spellSet.ids : []).map(Number).filter((x) => SPELL_IDS.includes(x)))].slice(0, 2);
+      if (ids.length) sets[k] = ids; else delete sets[k];
+      if (Object.keys(sets).length <= 300) f.spellSets = sets;
     }
     this.settings.favorites = f;
     this.store.save();
@@ -1265,8 +1339,10 @@ class Engine extends EventEmitter {
   async _autoLoadout(champ, ruleIdx, log) {
     const f = this.settings.favorites || {};
     const r = ruleIdx >= 0 ? ((f.rules || [])[ruleIdx] || {}) : {};
-    let spells = Array.isArray(r.spells) && r.spells.filter(Boolean).length ? r.spells.filter(Boolean) : null;
-    let src = spells ? 'rule' : '';
+    // Hechizos: los fijos del campeón, si no los de la regla, si no los recomendados (si los activaste).
+    const own = (f.spellSets || {})[String(Number(champ))];
+    let spells = Array.isArray(own) && own.length ? own : Array.isArray(r.spells) && r.spells.filter(Boolean).length ? r.spells.filter(Boolean) : null;
+    let src = spells ? (spells === own ? 'champ' : 'rule') : '';
     if (!spells && f.autoSpells) { spells = this._recommendedSpells(champ); src = 'rec'; }
     if (spells) {
       const res = await this._applySpells(spells);
@@ -1338,9 +1414,10 @@ class Engine extends EventEmitter {
       if (log) log.runes = page ? { name: page.name, primary: page.primaryStyleId, own: !!own } : 'none';
       if (!page) { this._alert('autoRunesFailed'); return; }
       const pos = normPos(me.position) || 'none';
-      let r = await this.useRunes(page, championId);
+      // Primero solo en la página temporal del cliente (no ocupa tus páginas).
+      let r = await this.useRunes(page, championId, { tempOnly: true });
       if (log) log.runesSteps = [['use', r && (r.ok ? 'ok' : r.error)]];
-      if (r && r.error === 'full') {
+      if (r && r.error === 'noTemp') {
         // Sin página temporal y con tus páginas llenas: se le pide al cliente que cree su página temporal recomendada (como hace él al elegir una recomendada).
         const rq = await this.lcu.request('POST', `/lol-perks/v1/recommended-pages-position/champion/${Number(championId)}/position/${pos}`);
         let temp = null;
@@ -1350,7 +1427,9 @@ class Engine extends EventEmitter {
           temp = this.s.runes.pages.find((p) => p.temp);
         }
         if (log) log.runesSteps.push(['temp', rq.status, !!temp]);
-        if (temp) { r = await this.useRunes(page, championId); if (log) log.runesSteps.push(['use2', r && (r.ok ? 'ok' : r.error)]); }
+        if (temp) { r = await this.useRunes(page, championId, { tempOnly: true }); if (log) log.runesSteps.push(['use2', r && (r.ok ? 'ok' : r.error)]); }
+        // Si el cliente no dio página temporal: tu página "Open Queue" (o una nueva si hay lugar).
+        if (!r || !r.ok) { r = await this.useRunes(page, championId); if (log) log.runesSteps.push(['own', r && (r.ok ? 'ok' : r.error)]); }
       }
       const spare = Number((this.settings.favorites || {}).runePageId) || 0;
       if (r && r.error === 'full' && spare) {
@@ -1639,7 +1718,7 @@ class Engine extends EventEmitter {
   }
 
   // Aplica una recomendada sin gastar una de tus páginas: reusa la página temporal del cliente (como hace el propio cliente).
-  async useRunes(page, championId) {
+  async useRunes(page, championId, opts) {
     const ids = Array.isArray(page && page.selectedPerkIds) ? page.selectedPerkIds.map(Number) : [];
     if (ids.length !== 9 || ids.some((n) => !n) || !page.primaryStyleId || !page.subStyleId) return { ok: false, error: 'invalid' };
     if (page.id) return this.selectRunePage(page.id);
@@ -1658,6 +1737,7 @@ class Engine extends EventEmitter {
       }
       if (this._diag) this._diag.useRunesFail = { status: r.status, data: r.data, target: target.id, body };
     } else if (this._diag) this._diag.useRunesFail = { noTemp: true, pages: this.s.runes.pages, champ };
+    if (opts && opts.tempOnly) return { ok: false, error: 'noTemp' };
     return this.saveRunes(Object.assign({}, page, { name: 'Open Queue' })); // sin página temporal: se guarda en una propia
   }
 

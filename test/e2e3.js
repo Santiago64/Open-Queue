@@ -222,10 +222,14 @@ async function waitFor(fn, label, ms = 6000) {
   assert.strictEqual(state.settings.preBan.championId, 266);
   const nb = mock.calls.length;
   mock.startChampSelect();
+  await waitFor(() => mock.calls.slice(nb).find((c) => c.method === 'PATCH' && /actions\/0$/.test(c.url) && c.body && c.body.championId === 266 && !c.body.completed), 'ban preparado marcado');
+  await sleep(500);
+  assert(!mock.calls.slice(nb).find((c) => c.method === 'PATCH' && /actions\/0$/.test(c.url) && c.body && c.body.completed), 'no se confirma antes del final');
+  mock.updateSession((s) => { s.timer = { phase: 'BAN_PICK', adjustedTimeLeftInPhase: 1200, totalTimeInPhase: 30000, isInfinite: false }; });
   await waitFor(() => mock.calls.slice(nb).find((c) => c.method === 'PATCH' && /actions\/0$/.test(c.url) && c.body && c.body.championId === 266 && c.body.completed === true), 'ban preparado');
   await ask('setPreBan', { championId: null });
   mock.setPhase('None'); await sleep(300);
-  ok('ban preparado: se banea solo en tu turno de ban');
+  ok('ban preparado: se marca al empezar tu turno (tu equipo lo ve) y se confirma en el segundo 0');
 
   // ---- Chat en ranked: apodo del cliente + campeón de quien habla
   mock.st.chat = [];

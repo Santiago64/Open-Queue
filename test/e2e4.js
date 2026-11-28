@@ -341,6 +341,62 @@ const game = (championId, lane, role, win) => ({ gameMode: 'CLASSIC', participan
   ok('set de runas: "recomendadas" en la regla gana sobre el set, y el set se puede borrar');
   await ask('setFavorites', { rules: [], autoPick: true });
 
+  // 5j) Hechizos fijos por campeón: ganan sobre los de la regla.
+  await ask('setFavorites', { spellSet: { championId: 266, ids: [4, 6, 6, 99] }, rules: [{ picks: [{ c: 266 }], spells: [12, 4] }] });
+  await waitFor(() => ((state.settings.favorites.spellSets || {})['266'] || []).length === 2, 'hechizos del campeón');
+  assert.deepStrictEqual(state.settings.favorites.spellSets['266'], [4, 6]);
+  lp = await loadPick(60, 'top');
+  assert.deepStrictEqual(lp.spells, { spell1Id: 4, spell2Id: 6 }, 'los del campeón');
+  lp = await loadPick(61, 'jungle');
+  assert(lp.spells.spell1Id === 11 || lp.spells.spell2Id === 11, 'en jungla Aplastar igual');
+  await ask('setFavorites', { spellSet: { championId: 266, ids: [] }, rules: [] });
+  await waitFor(() => !(state.settings.favorites.spellSets || {})['266'], 'hechizos borrados');
+  ok('hechizos por campeón: ganan sobre los de la regla (en jungla Aplastar sigue fijo) y se pueden borrar');
+
+  // 5k) Ban automático entre tus odiados: saltea los ya baneados y lo que quiere jugar tu equipo.
+  await ask('setFavorites', { autoPick: false });
+  await ask('setPrePick', { championId: null });
+  await ask('setPreBan', { championId: null });
+  await ask('setHates', { ids: [266, 22, 3, 3, 0], autoBan: true });
+  await waitFor(() => (state.settings.preBan.hates || []).length === 3 && state.settings.preBan.autoBan, 'odiados');
+  const banRun = async (prep) => {
+    const n0 = mock.calls.length;
+    mock.startChampSelect();
+    mock.updateSession((s) => { s.bans.theirTeamBans = [266]; s.myTeam[1].championPickIntent = 22; if (prep) prep(s); });
+    await waitFor(() => mock.calls.slice(n0).find((c) => c.method === 'PATCH' && /actions\/0$/.test(c.url) && !c.body.completed), 'ban marcado');
+    const hov = mock.calls.slice(n0).find((c) => c.method === 'PATCH' && /actions\/0$/.test(c.url)).body.championId;
+    return { n0, hov };
+  };
+  const finish = async (n0) => {
+    mock.updateSession((s) => { s.timer = { phase: 'BAN_PICK', adjustedTimeLeftInPhase: 1200, totalTimeInPhase: 30000, isInfinite: false }; });
+    await waitFor(() => mock.calls.slice(n0).find((c) => c.method === 'PATCH' && /actions\/0$/.test(c.url) && c.body.completed), 'ban confirmado');
+    const done = mock.calls.slice(n0).find((c) => c.method === 'PATCH' && /actions\/0$/.test(c.url) && c.body.completed).body.championId;
+    mock.setPhase('None'); await sleep(300);
+    return done;
+  };
+  let br = await banRun();
+  assert.strictEqual(br.hov, 3, 'marca el primer odiado disponible (266 baneado, 22 lo quiere un aliado)');
+  assert.strictEqual(await finish(br.n0), 3);
+  ok('ban automático: marca y banea el primer odiado disponible (saltea baneados y lo que quiere tu equipo)');
+  br = await banRun();
+  mock.updateSession((s) => { s.actions[0][0].championId = 1; });
+  await sleep(300);
+  assert.strictEqual(await finish(br.n0), 1, 'si cambiaste el ban vos, se respeta');
+  ok('ban automático: si marcaste otro campeón vos, en el segundo 0 se banea el tuyo');
+  await ask('setHates', { autoBan: false });
+
+  // 5l) Planificación: el pick preparado se muestra a tu equipo antes de los baneos (sin banearlo).
+  await ask('setPrePick', { championId: 22 });
+  const np = mock.calls.length;
+  mock.startChampSelect();
+  mock.updateSession((s) => { s.timer = { phase: 'PLANNING', adjustedTimeLeftInPhase: 9000, totalTimeInPhase: 10000, isInfinite: false }; });
+  await waitFor(() => mock.calls.slice(np).find((c) => c.method === 'PATCH' && /actions\/2$/.test(c.url) && c.body.championId === 22 && !c.body.completed), 'intención en planificación');
+  await sleep(400);
+  assert(!mock.calls.slice(np).find((c) => c.method === 'PATCH' && /actions\/0$/.test(c.url)), 'no toca el ban');
+  ok('planificación: tu pick preparado se le muestra a tu equipo antes de los baneos');
+  mock.setPhase('None'); await sleep(300);
+  await ask('setPrePick', { championId: null });
+
   // 6) Chat en ranked: apodo que da el cliente por celda (en tu idioma), nunca "Aliado N".
   mock.st.chat = [];
   mock.st.cellSummoners = { 1: { cellId: 1, nameVisibilityType: 'HIDDEN', playerAlias: 'Dagarraco Rocoso' } };

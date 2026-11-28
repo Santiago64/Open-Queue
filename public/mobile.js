@@ -92,6 +92,7 @@
     else if (a.kind === 'chat') { own('chat'); vibrate(60); }
     else if (a.kind === 'autoPicked') { if (!own('autoPick')) beep([988, 784]); toast(`${t('autoPicked')}: ${champName(a.championId)}`, 5000); vibrate([200, 80, 200]); }
     else if (a.kind === 'autoRunes') toast(`${t('autoRunesDone')}${a.name ? ': ' + a.name : ''}`, 4000);
+    else if (a.kind === 'autoBan') toast(`${t('autoBanDone')}: ${champName(a.championId)}`, 4000);
     else if (a.kind === 'autoSpells') toast(`${t('autoSpellsDone')}: ${(a.ids || []).map(spName).join(' + ')}`, 4000);
     else if (a.kind === 'autoSpellsFailed') toast(t('autoSpellsFailed'), 5000);
     else if (a.kind === 'autoRunesNoSlot') toast(t('autoRunesNoSlot'), 6000);
@@ -567,12 +568,28 @@
       <div class="row">${bid ? champImg(bid) : ''}<div style="flex:1"><div>${bid ? esc(champName(bid)) : `<span class="dim">${t('preBanNone')}</span>`}</div></div>
       <button class="btn small" data-act="openChamp" data-mode="preban">${t('chooseChamp')}</button>
       ${bid ? `<button class="btn small" data-act="clearPreBan">${t('prePickClear')}</button>` : ''}</div>
-      <p class="note">${t('preBanHelp')}</p></div>
+      <p class="note">${t('preBanHelp')}</p>
+      ${hatesHtml()}</div>
       ${favoritesHtml()}`;
     // Solo se redibuja si cambió algo, y nunca con una lista abierta: si no, el selector (por ejemplo la página de runas) se cierra solo.
     if (el._h === html) return;
     if (document.activeElement && el.contains(document.activeElement) && document.activeElement.tagName === 'SELECT') return;
     el.innerHTML = html; el._h = html;
+  }
+
+  // Campeones que odiás (hasta 5): si llegás al final de tu ban sin banear, se banea el primero disponible.
+  function hatesHtml() {
+    const pb = state.settings.preBan || {};
+    const ids = pb.hates || [];
+    const slots = [0, 1, 2, 3, 4].map((i) => {
+      const k = ids[i];
+      return `<button class="pill" style="flex:1;flex-direction:column;padding:6px 2px;min-width:0" data-act="openHate" data-i="${i}">${k ? champImg(k, 'sm') : '<div class="portrait sm"></div>'}<span style="font-size:10px;overflow:hidden;text-overflow:ellipsis;max-width:100%">${k ? esc(champName(k)) : '+'}</span></button>`;
+    }).join('');
+    return `<div class="dim" style="font-size:12px;margin:12px 0 6px">${t('hates')}</div>
+      <div class="row" style="gap:6px">${slots}</div>
+      ${ids.length ? `<button class="btn small" style="margin-top:8px" data-act="clearHates">${t('hatesClear')}</button>` : ''}
+      <div class="row" style="margin-top:10px"><span style="flex:1">${t('autoBan')}</span><div class="toggle ${pb.autoBan ? 'on' : ''}" data-act="toggleAutoBan"></div></div>
+      <p class="note" style="margin-top:4px">${t('autoBanHelp')}</p>`;
   }
 
   // Favoritos (hasta 3) y pick automático en el último segundo.
@@ -675,7 +692,8 @@
       if (own && own.length) { const ok = new Set(own); S.champions.forEach((c) => { if (!ok.has(c.key)) d.add(c.key); }); }
       return d;
     }
-    if (!cs || sheet.mode === 'prepick' || sheet.mode === 'preban' || sheet.mode === 'fav' || sheet.mode === 'rule') return d;
+    if (sheet.mode === 'rule' || sheet.mode === 'hate') { takenKeys().forEach((k) => d.add(k)); return d; }
+    if (!cs || sheet.mode === 'prepick' || sheet.mode === 'preban' || sheet.mode === 'fav') return d;
     bannedKeys().forEach((b) => d.add(b));
     const isBan = sheet.mode === 'turn' && cs.myTurn && cs.myTurn.type === 'ban';
     if (!isBan) {
@@ -688,6 +706,22 @@
     return d;
   }
 
+  // Campeones que ya están en la misma sección (de la regla o de la lista de odiados): se ven en gris y no se pueden volver a elegir.
+  function takenKeys() {
+    const out = new Set();
+    if (sheet.mode === 'hate') { (((state.settings || {}).preBan || {}).hates || []).forEach((k, i) => { if (i !== sheet.qi) out.add(Number(k)); }); return out; }
+    const rt = sheet.rt || {}; const r = RULES[rt.ri];
+    if (!r) return out;
+    let list = [];
+    if (rt.kind === 'vs') list = r.vs;
+    else if (rt.kind === 'pick') list = r.picks.map((p) => p.c);
+    else if (rt.kind === 'avoid' && r.picks[rt.pi]) list = r.picks[rt.pi].avoid.concat(r.picks[rt.pi].c || []);
+    else if (rt.kind === 'ally' && r.conds[rt.pi]) list = r.conds[rt.pi].champs;
+    else if (rt.kind === 'block') list = (r.block || { champs: [] }).champs;
+    list.forEach((k) => { if (Number(k) > 0) out.add(Number(k)); });
+    return out;
+  }
+
   function bannedKeys() {
     const cs = state && state.champSelect;
     if (!cs) return new Set();
@@ -698,6 +732,14 @@
     $('sheetChamp').style.zIndex = mode === 'rule' ? '30' : ''; // las reglas abren el selector encima del editor
     if (mode === 'rule') {
       sheet.mode = 'rule'; sheet.rt = qi; sheet.champ = null; sheet.search = ''; sheet.cls = '';
+      $('scSearch').value = '';
+      $('sheetChamp').classList.remove('hidden');
+      renderSheets();
+      return;
+    }
+    if (mode === 'hate') {
+      sheet.mode = 'hate'; sheet.qi = qi;
+      sheet.champ = ((state.settings.preBan || {}).hates || [])[qi] || null; sheet.search = ''; sheet.cls = '';
       $('scSearch').value = '';
       $('sheetChamp').classList.remove('hidden');
       renderSheets();
@@ -745,7 +787,7 @@
 
     if (sheet.mode === 'qslot' && !(state && state.lobby && state.lobby.quickPlay)) { closeSheets(); return; }
     const isBan = sheet.mode === 'turn' && cs && cs.myTurn && cs.myTurn.type === 'ban';
-    $('scTitle').textContent = sheet.mode === 'rule' ? t({ pick: 'ruleAddPick', avoid: 'ruleAddAvoid', ally: 'condAlly', block: 'ruleBlockWhat' }[sheet.rt.kind] || 'ruleAddVs') : sheet.mode === 'fav' ? `${t('favorites')} ${sheet.qi + 1}` : sheet.mode === 'prepick' ? t('prePick') : sheet.mode === 'preban' ? t('preBan') : isBan ? t('chooseBan') : t('chooseChamp');
+    $('scTitle').textContent = sheet.mode === 'rule' ? t({ pick: 'ruleAddPick', avoid: 'ruleAddAvoid', ally: 'condAlly', block: 'ruleBlockWhat' }[sheet.rt.kind] || 'ruleAddVs') : sheet.mode === 'fav' ? `${t('favorites')} ${sheet.qi + 1}` : sheet.mode === 'hate' ? `${t('hates')} ${sheet.qi + 1}` : sheet.mode === 'prepick' ? t('prePick') : sheet.mode === 'preban' ? t('preBan') : isBan ? t('chooseBan') : t('chooseChamp');
     $('scNoData').textContent = S.ok ? '' : t('noData');
 
     const classes = ['Fighter', 'Tank', 'Mage', 'Assassin', 'Marksman', 'Support'];
@@ -754,6 +796,7 @@
 
     const off = disabledKeys();
     const banSet = (sheet.mode === 'turn' || sheet.mode === 'hover') ? bannedKeys() : new Set();
+    const taken = (sheet.mode === 'rule' || sheet.mode === 'hate') ? takenKeys() : new Set();
     if (sheet.champ && off.has(sheet.champ)) sheet.champ = null;
     let items = S.champions.length ? S.champions : ((cs && cs.pickable) || []).map((k) => ({ key: k, name: String(k), tags: [] }));
     const q = norm(sheet.search.trim());
@@ -761,13 +804,13 @@
     const gridHtml = items.map((c) => {
       const isOff = off.has(c.key);
       const isBan = isOff && banSet.has(c.key);
-      return `<div class="cell ${sheet.champ === c.key ? 'sel' : ''} ${isOff ? 'off' : ''} ${isBan ? 'ban' : ''}" data-act="pickCell" data-k="${c.key}"${isOff ? ' aria-disabled="true"' : ''}>${champImg(c.key)}<span>${esc(c.name)}</span>${isBan ? `<em class="bantag">${t('bannedTag')}</em>` : ''}</div>`;
+      return `<div class="cell ${sheet.champ === c.key ? 'sel' : ''} ${isOff ? 'off' : ''} ${isBan ? 'ban' : ''}" data-act="pickCell" data-k="${c.key}"${isOff ? ' aria-disabled="true"' : ''}>${champImg(c.key)}<span>${esc(c.name)}</span>${isBan ? `<em class="bantag">${t('bannedTag')}</em>` : taken.has(c.key) ? `<em class="bantag">${t('takenTag')}</em>` : ''}</div>`;
     }).join('');
     const gridEl = $('scGrid');
     if (gridEl._h !== gridHtml) { gridEl.innerHTML = gridHtml; gridEl._h = gridHtml; }
 
     const btn = $('scConfirm');
-    if (sheet.mode === 'prepick' || sheet.mode === 'preban' || sheet.mode === 'qslot' || sheet.mode === 'fav' || sheet.mode === 'rule') { btn.textContent = t('confirm'); btn.disabled = !sheet.champ; }
+    if (sheet.mode === 'prepick' || sheet.mode === 'preban' || sheet.mode === 'qslot' || sheet.mode === 'fav' || sheet.mode === 'hate' || sheet.mode === 'rule') { btn.textContent = t('confirm'); btn.disabled = !sheet.champ; }
     else if (sheet.mode === 'turn') { btn.textContent = isBan ? t('confirmBan') : t('confirmPick'); btn.disabled = !sheet.champ; }
     else { btn.textContent = t('confirm'); btn.disabled = false; }
   }
@@ -847,6 +890,7 @@
           <button class="btn small" data-act="rulePickMove" data-i="${i}" data-j="${j}" data-v="1" ${j === r.picks.length - 1 ? 'disabled' : ''}>&darr;</button>
           <button class="btn small" data-act="rulePickDel" data-i="${i}" data-j="${j}">&#10005;</button></div>
         ${p.c && r.kind !== 'block' ? (() => { const set = ((state.settings.favorites || {}).runeSets || {})[String(p.c)]; return `<div class="row" style="gap:6px;margin-top:6px;align-items:center"><small class="dim">${t('ruleRunes')}:</small><span style="flex:1;display:flex;gap:3px;flex-wrap:wrap">${set ? set.selectedPerkIds.slice(0, 6).map((id) => `<div class="portrait sm" style="width:22px;height:22px">${perkImg(id)}</div>`).join('') : `<small class="dim">${t('runeSetNone')}</small>`}</span><button class="btn small" data-act="ruleRuneSet" data-k="${p.c}" data-lane="${r.lane || ''}">${set ? t('runesEdit') : t('runeSetBuild')}</button></div>`; })() : ''}
+        ${p.c && r.kind !== 'block' ? champSpellsHtml(p.c, r) : ''}
         <div class="row wrap" style="gap:6px;margin-top:6px;align-items:center"><small class="dim">${t('ruleAvoid')}</small>${p.avoid.map((k) => chipChamp(k, 'ruleAvoidDel', `data-i="${i}" data-j="${j}" data-k="${k}"`)).join('')}<button class="btn small" data-act="ruleAdd" data-kind="avoid" data-i="${i}" data-j="${j}">+</button></div></div>`).join('')}
       ${r.picks.length < 5 ? `<div class="row wrap" style="gap:6px"><button class="btn small" data-act="ruleAdd" data-kind="pick" data-i="${i}">+ ${t('ruleAddPick')}</button><select data-rule-addattr="${i}" style="flex:1;min-width:150px;padding:8px"><option value="">+ ${t('ruleAddAttr')}</option>${ATTRS.map((a) => `<option value="${a}">${t('attr_' + a)}</option>`).join('')}</select></div>` : ''}
       ${ruleLoadoutHtml(r, i)}`}</div>`).join('');
@@ -868,14 +912,43 @@
   const SPELL_NAMES = { es: { 1: 'Limpiar', 3: 'Extenuación', 4: 'Destello', 6: 'Fantasmal', 7: 'Curar', 11: 'Aplastar', 12: 'Teleportar', 14: 'Prender', 21: 'Barrera' }, en: { 1: 'Cleanse', 3: 'Exhaust', 4: 'Flash', 6: 'Ghost', 7: 'Heal', 11: 'Smite', 12: 'Teleport', 14: 'Ignite', 21: 'Barrier' } };
   const spName = (k) => (S.spellByKey[k] && S.spellByKey[k].name) || SPELL_NAMES[OQ.lang][k] || String(k);
   // Hechizos y runas de una regla. En jungla Aplastar va siempre (el juego no deja sacarlo): solo se elige el otro.
+  // Ícono de hechizo (con su nombre debajo); si no hay imagen, solo el nombre.
+  function spellChip(k, act, attrs, on, locked) {
+    return `<button class="spchip ${on ? 'on' : ''} ${locked ? 'lock' : ''}" ${act ? `data-act="${act}"` : ''} ${attrs || ''} ${locked ? 'disabled' : ''} title="${esc(spName(k))}">${spellImg(k)}<small>${esc(spName(k))}${locked ? ' 🔒' : ''}</small></button>`;
+  }
+  // Agrega o saca un hechizo de la lista (máximo n; si ya hay n, se reemplaza el más viejo).
+  function toggleSpell(list, k, n) {
+    let l = list.filter((x) => x && !(x === 11 && n === 1));
+    if (l.includes(k)) return l.filter((x) => x !== k);
+    l.push(k);
+    while (l.length > n) l.shift();
+    return l;
+  }
+  const SPX = { open: null }; // qué campeón tiene abierta la grilla de hechizos
+  async function saveSpellSet(c, ids) {
+    const f = state.settings.favorites = state.settings.favorites || {}; const sets = Object.assign({}, f.spellSets || {});
+    if (ids.length) sets[String(c)] = ids.slice(); else delete sets[String(c)];
+    f.spellSets = sets; renderRules();
+    const r = await request('setFavorites', { spellSet: { championId: c, ids } });
+    if (!r || !r.ok) toast(t('errGeneric'), 4000);
+  }
+  // Hechizos fijos de un campeón (valen en todas las reglas, ganan sobre los de la regla).
+  function champSpellsHtml(c, r) {
+    const cur = (((state.settings.favorites || {}).spellSets || {})[String(c)] || []);
+    const open = SPX.open === String(c);
+    const jg = r.lane === 'jungle';
+    return `<div class="row" style="gap:6px;margin-top:6px;align-items:center"><small class="dim">${t('champSpells')}:</small><span style="flex:1;display:flex;gap:3px">${cur.length ? cur.map((k) => spellImg(k)).join('') : `<small class="dim">${t('champSpellsNone')}</small>`}</span>
+      <button class="btn small" data-act="champSpellOpen" data-k="${c}">${open ? t('done') : cur.length ? t('runesEdit') : t('champSpellsPick')}</button></div>
+      ${open ? `<div class="spgrid">${RULE_SPELLS.map((k) => spellChip(k, 'champSpellTog', `data-k="${c}" data-s="${k}"`, cur.includes(k))).join('')}</div>
+        <p class="note" style="margin:4px 0 0">${t('champSpellsHelp')}${jg ? ' ' + t('ruleSmiteNote') : ''}</p>
+        ${cur.length ? `<button class="btn small" style="margin-top:4px" data-act="champSpellDel" data-k="${c}">${t('champSpellsClear')}</button>` : ''}` : ''}`;
+  }
   function ruleLoadoutHtml(r, i) {
     const sp = r.spells || [];
     const jg = r.lane === 'jungle';
-    const opts = (j) => [[0, t('ruleSpellNone')]].concat(RULE_SPELLS.filter((k) => !(jg && k === 11)).map((k) => [k, spName(k)]));
     const pages = ((state.runes && state.runes.pages) || []).filter((p) => !p.temp);
     return `<div class="dim" style="font-size:12px;margin:10px 0 6px">${t('ruleSpells')}</div>
-      <div class="row wrap" style="gap:6px;align-items:center">${jg ? `<span class="pill" style="padding:6px 8px">${esc(spName(11))} 🔒</span>` : sel(`data-rule-spell="${i}:0"`, opts(0), sp[0] || 0)}
-        ${sel(`data-rule-spell="${i}:${jg ? 0 : 1}"`, opts(1), (jg ? sp[0] : sp[1]) || 0)}</div>
+      <div class="spgrid">${jg ? spellChip(11, '', '', true, true) : ''}${RULE_SPELLS.filter((k) => !(jg && k === 11)).map((k) => spellChip(k, 'ruleSpellTog', `data-i="${i}" data-k="${k}"`, sp.includes(k))).join('')}</div>
       ${jg ? `<p class="note" style="margin:4px 0 0">${t('ruleSmiteNote')}</p>` : `<p class="note" style="margin:4px 0 0">${t('ruleSpellsNote')}</p>`}
       <div class="dim" style="font-size:12px;margin:10px 0 6px">${t('ruleRunes')}</div>
       ${sel(`data-rule-runes="${i}" style="width:100%"`, [['', t('ruleRunesNone')], ['rec', t('ruleRunesRec')]].concat(pages.map((p) => [p.id, p.name])), r.runes || '')}`;
@@ -1257,13 +1330,29 @@
       case 'cls': sheet.cls = v; renderSheets(); break;
       case 'pickCell': {
         const k = Number(el.getAttribute('data-k'));
-        if (el.classList.contains('off')) { toast(el.classList.contains('ban') ? t('champBanned') : t('champUnavailable'), 1800); break; } // no se puede elegir: el menú queda abierto
+        if (el.classList.contains('off')) { toast(el.classList.contains('ban') ? t('champBanned') : (sheet.mode === 'rule' || sheet.mode === 'hate') ? t('champTaken') : t('champUnavailable'), 1800); break; } // no se puede elegir: el menú queda abierto
         sheet.champ = k;
         if (sheet.mode === 'turn' || sheet.mode === 'hover') cmd('hover', { championId: k });
         renderSheets();
         break;
       }
       case 'clearPreBan': cmd('setPreBan', { championId: null }); break;
+      case 'openHate': openChampSheet('hate', Number(el.getAttribute('data-i'))); break;
+      case 'clearHates': cmd('setHates', { ids: [] }); break;
+      case 'toggleAutoBan': cmd('setHates', { autoBan: !(state.settings.preBan || {}).autoBan }); break;
+      case 'ruleSpellTog': {
+        const r = RULES[Number(el.getAttribute('data-i'))]; const k = Number(el.getAttribute('data-k'));
+        if (r) { r.spells = toggleSpell(r.spells || [], k, r.lane === 'jungle' ? 1 : 2); saveRules(); }
+        break;
+      }
+      case 'champSpellOpen': { const k = el.getAttribute('data-k'); SPX.open = SPX.open === k ? null : k; renderRules(); break; }
+      case 'champSpellTog': {
+        const c = Number(el.getAttribute('data-k')); const k = Number(el.getAttribute('data-s'));
+        const cur = (((state.settings.favorites || {}).spellSets || {})[String(c)] || []);
+        saveSpellSet(c, toggleSpell(cur, k, 2));
+        break;
+      }
+      case 'champSpellDel': { const c = Number(el.getAttribute('data-k')); SPX.open = null; saveSpellSet(c, []); break; }
       case 'openFav': openChampSheet('fav', Number(el.getAttribute('data-i'))); break;
       case 'clearFavs': cmd('setFavorites', { ids: [] }); break;
       case 'toggleAutoPick': cmd('setFavorites', { autoPick: !(state.settings.favorites && state.settings.favorites.autoPick) }); break;
@@ -1438,6 +1527,9 @@
       }
       $('sheetChamp').classList.add('hidden'); $('sheetChamp').style.zIndex = ''; sheet.mode = null;
       return;
+    } else if (sheet.mode === 'hate') {
+      const ids = ((state.settings.preBan && state.settings.preBan.hates) || []).slice(0, 5);
+      if (sheet.champ && !ids.some((k, i) => k === sheet.champ && i !== sheet.qi)) { ids[sheet.qi] = sheet.champ; cmd('setHates', { ids: ids.filter(Boolean) }); }
     } else if (sheet.mode === 'fav') {
       const ids = ((state.settings.favorites && state.settings.favorites.ids) || []).slice(0, 3);
       const other = ids.indexOf(sheet.champ);

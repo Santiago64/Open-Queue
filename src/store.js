@@ -9,12 +9,12 @@ const DEFAULTS = {
   settings: {
     autoAccept: { enabled: false, delay: 0 }, // delay en segundos (0..8)
     prePick: { championId: null },
-    preBan: { championId: null },
+    preBan: { championId: null, hates: [], autoBan: false }, // hates: hasta 5 campeones que odiás; autoBan: si no baneaste, se banea uno de ellos
     autoInvite: { enabled: false }, // aceptar solo las invitaciones a sala
     roles: { first: '', second: '' }, // rol principal y secundario para Normal y Clasificatoria
     // Hasta 3 favoritos. autoPick: si llega el final de tu turno sin pick, se elige uno solo.
     // useHistory: ordena y recomienda según tus partidas (y la línea que te tocó).
-    favorites: { ids: [], autoPick: false, useHistory: false, when: 'end', autoRunes: false, runePageId: 0, rules: [], autoSpells: false, runeSets: {} }, // runeSets: { championId: página de runas armada en las reglas } // when: 'end' (segundo 0) | 'start' (apenas te toca)
+    favorites: { ids: [], autoPick: false, useHistory: false, when: 'end', autoRunes: false, runePageId: 0, rules: [], autoSpells: false, runeSets: {}, spellSets: {} }, // spellSets: { championId: [hechizo, hechizo] } // runeSets: { championId: página de runas armada en las reglas } // when: 'end' (segundo 0) | 'start' (apenas te toca)
   },
   pairing: { code: null, tokens: [] },
 };
