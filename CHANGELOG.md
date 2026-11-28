@@ -127,3 +127,10 @@
 - **Reglas de bloqueo** ("No elegir"): por ejemplo, "si mi equipo tiene 2 o más magos, no elegir magos". Bloquean una clase o una lista de campeones para el pick automático, salvo que los hayas marcado vos.
 - **Opción "Mi mejor de una clase"** dentro de una regla: por ejemplo, "si falta tanque, mi mejor tanque" (de tus favoritos, tus mejores según tus partidas y tu maestría).
 - Datos de clases, distancia y tipo de daño: Data Dragon (datos públicos de Riot). Sin internet se usan las clases del cliente. El tipo de daño es aproximado.
+
+##  v0.8.14
+- **Hechizos por regla**: cada regla puede decir con qué hechizos de invocador ir. En jungla Aplastar va siempre (el juego no deja sacarlo), así que solo se elige el otro. Cada hechizo queda en la tecla donde ya lo tenías (por ejemplo, Destello en la F).
+- **Runas por regla**: cada regla puede poner una de tus páginas o las recomendadas del cliente.
+- **Hechizos recomendados** (interruptor nuevo): si la regla no dice nada, se ponen los que más usaste vos con ese campeón en esa línea en tus últimas partidas; si no hay datos, unos típicos de la línea.
+- Arreglo: con "Poner runas recomendadas", la lista para elegir qué página usar se cerraba sola al segundo. Ahora la pantalla no se redibuja mientras la lista está abierta.
+- README: vuelven los videos de demo y `npm test` falla si alguna vez se pierden.

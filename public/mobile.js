@@ -92,6 +92,8 @@
     else if (a.kind === 'chat') { own('chat'); vibrate(60); }
     else if (a.kind === 'autoPicked') { if (!own('autoPick')) beep([988, 784]); toast(`${t('autoPicked')}: ${champName(a.championId)}`, 5000); vibrate([200, 80, 200]); }
     else if (a.kind === 'autoRunes') toast(`${t('autoRunesDone')}${a.name ? ': ' + a.name : ''}`, 4000);
+    else if (a.kind === 'autoSpells') toast(`${t('autoSpellsDone')}: ${(a.ids || []).map(spName).join(' + ')}`, 4000);
+    else if (a.kind === 'autoSpellsFailed') toast(t('autoSpellsFailed'), 5000);
     else if (a.kind === 'autoRunesNoSlot') toast(t('autoRunesNoSlot'), 6000);
     else if (a.kind === 'autoRunesFailed') toast(t('autoRunesFailed'), 5000);
     else if (a.kind === 'autoPickFailed') { toast(t('autoPickFailed'), 5000); vibrate([100, 60, 100]); }
@@ -552,10 +554,10 @@
 
   function renderPre() {
     const el = $('preCard');
-    if (!state.connected || ['InProgress', 'GameStart', 'Reconnect', 'WaitingForStats', 'PreEndOfGame', 'EndOfGame'].includes(state.phase)) { el.innerHTML = ''; return; }
+    if (!state.connected || ['InProgress', 'GameStart', 'Reconnect', 'WaitingForStats', 'PreEndOfGame', 'EndOfGame'].includes(state.phase)) { el.innerHTML = ''; el._h = ''; return; }
     const id = state.settings.prePick.championId;
     const bid = state.settings.preBan && state.settings.preBan.championId;
-    el.innerHTML = `<div class="card"><h2>${t('prePick')}</h2>
+    const html = `<div class="card"><h2>${t('prePick')}</h2>
       <div class="row">${id ? champImg(id) : ''}<div style="flex:1"><div>${id ? esc(champName(id)) : `<span class="dim">${t('prePickNone')}</span>`}</div></div>
       <button class="btn small" data-act="openChamp" data-mode="prepick">${t('chooseChamp')}</button>
       ${id ? `<button class="btn small" data-act="clearPre">${t('prePickClear')}</button>` : ''}</div>
@@ -567,6 +569,10 @@
       ${bid ? `<button class="btn small" data-act="clearPreBan">${t('prePickClear')}</button>` : ''}</div>
       <p class="note">${t('preBanHelp')}</p></div>
       ${favoritesHtml()}`;
+    // Solo se redibuja si cambió algo, y nunca con una lista abierta: si no, el selector (por ejemplo la página de runas) se cierra solo.
+    if (el._h === html) return;
+    if (document.activeElement && el.contains(document.activeElement) && document.activeElement.tagName === 'SELECT') return;
+    el.innerHTML = html; el._h = html;
   }
 
   // Favoritos (hasta 3) y pick automático en el último segundo.
@@ -585,6 +591,7 @@
       <p class="note" style="margin-top:4px">${t(f.when === 'start' ? 'autoPickHelpStart' : 'autoPickHelp')}</p>
       ${f.autoPick ? `<div class="row" style="margin-top:10px"><span style="flex:1">${t('autoRunes')}</span><div class="toggle ${f.autoRunes ? 'on' : ''}" data-act="toggleAutoRunes"></div></div><p class="note" style="margin-top:4px">${t('autoRunesHelp')}</p>
       ${f.autoRunes ? `<div class="dim" style="font-size:12px;margin:8px 0 4px">${t('autoRunesPage')}</div><select id="autoRunesPage" style="width:100%"><option value="0">${t('autoRunesPageNone')}</option>${((state.runes && state.runes.pages) || []).filter((p) => !p.temp).map((p) => `<option value="${p.id}" ${Number(f.runePageId) === p.id ? 'selected' : ''}>${esc(p.name)}</option>`).join('')}</select><p class="note" style="margin-top:4px">${t('autoRunesPageHelp')}</p>` : ''}` : ''}
+      ${f.autoPick ? `<div class="row" style="margin-top:10px"><span style="flex:1">${t('autoSpells')}</span><div class="toggle ${f.autoSpells ? 'on' : ''}" data-act="toggleAutoSpells"></div></div><p class="note" style="margin-top:4px">${t('autoSpellsHelp')}</p>` : ''}
       ${f.autoPick ? `<div class="row" style="margin-top:12px"><span style="flex:1">${t('rulesTitle')} <small class="dim">(${(f.rules || []).filter((r) => !r.off).length})</small></span><button class="btn small" data-act="openRules">${t('rulesEdit')}</button></div><p class="note" style="margin-top:4px">${t('rulesHelp')}</p>` : ''}
       <div class="row" style="margin-top:10px"><span style="flex:1">${t('useHistory')}</span><div class="toggle ${f.useHistory ? 'on' : ''}" data-act="toggleHistory"></div></div>
       <p class="note" style="margin-top:4px">${t('useHistoryHelp')}</p></div>`;
@@ -840,7 +847,8 @@
           <button class="btn small" data-act="rulePickMove" data-i="${i}" data-j="${j}" data-v="1" ${j === r.picks.length - 1 ? 'disabled' : ''}>&darr;</button>
           <button class="btn small" data-act="rulePickDel" data-i="${i}" data-j="${j}">&#10005;</button></div>
         <div class="row wrap" style="gap:6px;margin-top:6px;align-items:center"><small class="dim">${t('ruleAvoid')}</small>${p.avoid.map((k) => chipChamp(k, 'ruleAvoidDel', `data-i="${i}" data-j="${j}" data-k="${k}"`)).join('')}<button class="btn small" data-act="ruleAdd" data-kind="avoid" data-i="${i}" data-j="${j}">+</button></div></div>`).join('')}
-      ${r.picks.length < 5 ? `<div class="row wrap" style="gap:6px"><button class="btn small" data-act="ruleAdd" data-kind="pick" data-i="${i}">+ ${t('ruleAddPick')}</button><select data-rule-addattr="${i}" style="flex:1;min-width:150px;padding:8px"><option value="">+ ${t('ruleAddAttr')}</option>${ATTRS.map((a) => `<option value="${a}">${t('attr_' + a)}</option>`).join('')}</select></div>` : ''}`}</div>`).join('');
+      ${r.picks.length < 5 ? `<div class="row wrap" style="gap:6px"><button class="btn small" data-act="ruleAdd" data-kind="pick" data-i="${i}">+ ${t('ruleAddPick')}</button><select data-rule-addattr="${i}" style="flex:1;min-width:150px;padding:8px"><option value="">+ ${t('ruleAddAttr')}</option>${ATTRS.map((a) => `<option value="${a}">${t('attr_' + a)}</option>`).join('')}</select></div>` : ''}
+      ${ruleLoadoutHtml(r, i)}`}</div>`).join('');
     $('slBody').innerHTML = `<p class="note" style="margin:0 0 10px">${t('rulesIntro')}</p>${cards || `<p class="dim">${t('rulesNone')}</p>`}
       <button class="btn block primary" data-act="ruleNew" ${RULES.length >= 30 ? 'disabled' : ''}>+ ${t('ruleNew')}</button>
       <p class="note" style="margin-top:12px">${t('rulesLimits')}</p>`;
@@ -854,6 +862,22 @@
     else if (c.t === 'count') body = `<small class="dim">${t(c.team === 'enemy' ? 'condCountEnemy' : 'condCountAlly')}</small> ${sel(`data-rc="${i}:${j}:op"`, [['ge', '≥'], ['le', '≤'], ['eq', '=']], c.op)} ${sel(`data-rc="${i}:${j}:n"`, [0, 1, 2, 3, 4, 5].map((n) => [n, n]), c.n)} ${sel(`data-rc="${i}:${j}:attr"`, ATTRS.map((a) => [a, t('attr_' + a)]), c.attr)}`;
     else if (c.t === 'order') body = `<small class="dim">${t('condOrder')}</small> ${sel(`data-rc="${i}:${j}:v"`, [['1', '1º'], ['2', '2º'], ['3', '3º'], ['4', '4º'], ['5', '5º'], ['last', t('condLast')]], c.v)}`;
     return `<div class="row wrap" style="gap:6px;align-items:center;border:1px dashed var(--line2);padding:6px;margin-bottom:6px"><span style="flex:1;display:flex;flex-wrap:wrap;gap:6px;align-items:center">${body}</span>${del}</div>`;
+  }
+  const RULE_SPELLS = [4, 14, 12, 7, 21, 3, 6, 1, 11];
+  const SPELL_NAMES = { es: { 1: 'Limpiar', 3: 'Extenuación', 4: 'Destello', 6: 'Fantasmal', 7: 'Curar', 11: 'Aplastar', 12: 'Teleportar', 14: 'Prender', 21: 'Barrera' }, en: { 1: 'Cleanse', 3: 'Exhaust', 4: 'Flash', 6: 'Ghost', 7: 'Heal', 11: 'Smite', 12: 'Teleport', 14: 'Ignite', 21: 'Barrier' } };
+  const spName = (k) => (S.spellByKey[k] && S.spellByKey[k].name) || SPELL_NAMES[OQ.lang][k] || String(k);
+  // Hechizos y runas de una regla. En jungla Aplastar va siempre (el juego no deja sacarlo): solo se elige el otro.
+  function ruleLoadoutHtml(r, i) {
+    const sp = r.spells || [];
+    const jg = r.lane === 'jungle';
+    const opts = (j) => [[0, t('ruleSpellNone')]].concat(RULE_SPELLS.filter((k) => !(jg && k === 11)).map((k) => [k, spName(k)]));
+    const pages = ((state.runes && state.runes.pages) || []).filter((p) => !p.temp);
+    return `<div class="dim" style="font-size:12px;margin:10px 0 6px">${t('ruleSpells')}</div>
+      <div class="row wrap" style="gap:6px;align-items:center">${jg ? `<span class="pill" style="padding:6px 8px">${esc(spName(11))} 🔒</span>` : sel(`data-rule-spell="${i}:0"`, opts(0), sp[0] || 0)}
+        ${sel(`data-rule-spell="${i}:${jg ? 0 : 1}"`, opts(1), (jg ? sp[0] : sp[1]) || 0)}</div>
+      ${jg ? `<p class="note" style="margin:4px 0 0">${t('ruleSmiteNote')}</p>` : `<p class="note" style="margin:4px 0 0">${t('ruleSpellsNote')}</p>`}
+      <div class="dim" style="font-size:12px;margin:10px 0 6px">${t('ruleRunes')}</div>
+      ${sel(`data-rule-runes="${i}" style="width:100%"`, [['', t('ruleRunesNone')], ['rec', t('ruleRunesRec')]].concat(pages.map((p) => [p.id, p.name])), r.runes || '')}`;
   }
   function blockHtml(r, i) {
     const b = r.block || { attr: '', champs: [] };
@@ -874,10 +898,18 @@
     }
     const aa = g('data-rule-addattr');
     if (aa !== null && aa !== undefined && RULES[Number(aa)] && e.target.value) { const r = RULES[Number(aa)]; if (!r.picks.some((p) => p.attr === e.target.value) && r.picks.length < 5) r.picks.push({ c: 0, attr: e.target.value, avoid: [] }); saveRules(); return; }
+    const rs = g('data-rule-spell');
+    if (rs) {
+      const [i, j] = rs.split(':').map(Number); const r = RULES[i];
+      if (r) { const sp = (r.spells || []).slice(); sp[j] = Number(e.target.value) || 0; r.spells = sp.filter((x, k) => x && sp.indexOf(x) === k); saveRules(); }
+      return;
+    }
+    const rr = g('data-rule-runes');
+    if (rr !== null && rr !== undefined && RULES[Number(rr)]) { const r = RULES[Number(rr)]; const v = e.target.value; if (!v) delete r.runes; else r.runes = v === 'rec' ? 'rec' : Number(v); saveRules(); return; }
     const ba = g('data-rule-blockattr');
     if (ba !== null && ba !== undefined && RULES[Number(ba)]) { const r = RULES[Number(ba)]; r.block = r.block || { attr: '', champs: [] }; r.block.attr = e.target.value; saveRules(); return; }
     const li = e.target && e.target.getAttribute && e.target.getAttribute('data-rule-lane');
-    if (li !== null && li !== undefined && RULES[Number(li)]) { RULES[Number(li)].lane = e.target.value; saveRules(); }
+    if (li !== null && li !== undefined && RULES[Number(li)]) { const r = RULES[Number(li)]; r.lane = e.target.value; if (r.lane === 'jungle' && r.spells) r.spells = r.spells.filter((x) => x !== 11).slice(0, 1); saveRules(); }
   });
 
   // ===== Runas =====
@@ -1162,7 +1194,7 @@
     if (id === 'queueSel' && Number(e.target.value)) { rememberQueue(Number(e.target.value)); updateQueueCard(state.phase); if (state.phase === 'Lobby' && Number(e.target.value) !== Number(state.lobbyQueueId)) cmd('setLobbyQueue', { queueId: Number(e.target.value) }); }
     if (id === 'ruTarget') { RU.target = e.target.value; renderRunes(); }
     if (id === 'ruName') RU.newName = e.target.value;
-    if (id === 'autoRunesPage') cmd('setFavorites', { runePageId: Number(e.target.value) || 0 });
+    if (id === 'autoRunesPage') { cmd('setFavorites', { runePageId: Number(e.target.value) || 0 }); e.target.blur(); }
     if (id === 'roleFirst' || id === 'roleSecond') cmd('setRoles', { first: $('roleFirst').value, second: $('roleSecond').value });
   });
 
@@ -1214,6 +1246,7 @@
       case 'rulePickDel': { const r = RULES[Number(el.getAttribute('data-i'))]; if (r) { r.picks.splice(Number(el.getAttribute('data-j')), 1); saveRules(); } break; }
       case 'rulePickMove': { const r = RULES[Number(el.getAttribute('data-i'))]; const a = Number(el.getAttribute('data-j')); const b = a + Number(v); if (r && r.picks[b]) { [r.picks[a], r.picks[b]] = [r.picks[b], r.picks[a]]; saveRules(); } break; }
       case 'ruleAvoidDel': { const r = RULES[Number(el.getAttribute('data-i'))]; const p = r && r.picks[Number(el.getAttribute('data-j'))]; if (p) { p.avoid = p.avoid.filter((k) => k !== Number(el.getAttribute('data-k'))); saveRules(); } break; }
+      case 'toggleAutoSpells': cmd('setFavorites', { autoSpells: !(state.settings.favorites && state.settings.favorites.autoSpells) }); break;
       case 'toggleAutoRunes': cmd('setFavorites', { autoRunes: !(state.settings.favorites && state.settings.favorites.autoRunes) }); break;
       case 'autoPickWhen': cmd('setFavorites', { when: v }); break;
       case 'toggleHistory': cmd('setFavorites', { useHistory: !(state.settings.favorites && state.settings.favorites.useHistory) }); break;

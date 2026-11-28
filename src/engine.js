@@ -58,6 +58,7 @@ function histPos(tl) {
 
 // Reglas del pick automático, limpias y con topes (para que un pedido raro no rompa nada).
 const LANES = ['top', 'jungle', 'middle', 'bottom', 'utility'];
+const SPELL_IDS = [1, 3, 4, 6, 7, 11, 12, 14, 21]; // hechizos de la Grieta
 const ATTRS = ['tank', 'fighter', 'mage', 'assassin', 'marksman', 'support', 'melee', 'ranged', 'ap', 'ad'];
 function cleanRules(list) {
   const ids = (a, n) => [...new Set((Array.isArray(a) ? a : []).map(Number).filter((x) => x > 0))].slice(0, n);
@@ -81,6 +82,13 @@ function cleanRules(list) {
     const kind = r.kind === 'block' ? 'block' : 'pick';
     const b = r.block || {};
     const out = { vs: ids(r.vs, 10), lane: LANES.includes(r.lane) ? r.lane : '', picks, off: !!r.off, conds, kind };
+    if (kind === 'pick') {
+      let sp = (Array.isArray(r.spells) ? r.spells : []).map(Number).filter((x) => SPELL_IDS.includes(x));
+      sp = [...new Set(sp)].slice(0, 2);
+      if (out.lane === 'jungle') sp = sp.filter((x) => x !== 11).slice(0, 1); // en jungla Aplastar va siempre: solo se elige el otro
+      if (sp.length) out.spells = sp;
+      if (r.runes === 'rec') out.runes = 'rec'; else if (Number(r.runes) > 0) out.runes = Number(r.runes);
+    }
     if (kind === 'block') out.block = { attr: ATTRS.includes(b.attr) ? b.attr : '', champs: ids(b.champs, 10) };
     return out;
   });
@@ -991,6 +999,7 @@ class Engine extends EventEmitter {
     if (patch.when === 'start' || patch.when === 'end') f.when = patch.when;
     if (patch.autoRunes !== undefined) f.autoRunes = !!patch.autoRunes;
     if (patch.runePageId !== undefined) f.runePageId = Number(patch.runePageId) || 0;
+    if (patch.autoSpells !== undefined) { f.autoSpells = !!patch.autoSpells; if (f.autoSpells && this.s.phase === 'ChampSelect') this._loadHistory(); }
     if (Array.isArray(patch.rules)) f.rules = cleanRules(patch.rules);
     this.settings.favorites = f;
     this.store.save();
@@ -1007,18 +1016,19 @@ class Engine extends EventEmitter {
   // Lee tus últimas partidas (y tu maestría) para saber con qué campeones te va mejor en cada línea.
   async _loadHistory() {
     const f = this.settings.favorites || {};
-    if (!f.useHistory) return;
+    if (!f.useHistory && !f.autoSpells) return;
     if (this._hist && Date.now() - this._hist.at < 10 * 60 * 1000) return;
     if (this._histBusy) return;
     this._histBusy = true;
     try {
       const stats = new Map(); // championId -> { all: {g, w}, top: {g, w}, ... }
-      const add = (champ, pos, win) => {
+      const add = (champ, pos, win, sp) => {
         if (!champ) return;
-        if (!stats.has(champ)) stats.set(champ, { all: { g: 0, w: 0 } });
+        if (!stats.has(champ)) stats.set(champ, { all: { g: 0, w: 0 }, spells: {} });
         const e = stats.get(champ);
         e.all.g++; if (win) e.all.w++;
         if (pos) { e[pos] = e[pos] || { g: 0, w: 0 }; e[pos].g++; if (win) e[pos].w++; }
+        if (sp && sp[0] && sp[1]) { const k = (pos || 'any') + ':' + sp.slice().sort((a, b) => a - b).join('-'); e.spells[k] = (e.spells[k] || 0) + 1; }
       };
       let games = 0;
       for (let beg = 0; beg < 100; beg += 20) {
@@ -1029,7 +1039,7 @@ class Engine extends EventEmitter {
           if (!g || (g.gameMode && g.gameMode !== 'CLASSIC')) continue; // solo la Grieta (las líneas no aplican en ARAM)
           const me = (g.participants || [])[0];
           if (!me) continue;
-          add(Number(me.championId), histPos(me.timeline || {}), !!(me.stats && me.stats.win));
+          add(Number(me.championId), histPos(me.timeline || {}), !!(me.stats && me.stats.win), [Number(me.spell1Id) || 0, Number(me.spell2Id) || 0]);
           games++;
         }
         if (list.length < 20) break;
@@ -1235,6 +1245,63 @@ class Engine extends EventEmitter {
     cs.autoPickNext = c ? { championId: c, rule: rp ? rp.rule : -1 } : null;
   }
 
+  // Después del pick automático: hechizos y runas según la regla que eligió el campeón, o los recomendados si los activaste.
+  async _autoLoadout(champ, ruleIdx, log) {
+    const f = this.settings.favorites || {};
+    const r = ruleIdx >= 0 ? ((f.rules || [])[ruleIdx] || {}) : {};
+    let spells = Array.isArray(r.spells) && r.spells.filter(Boolean).length ? r.spells.filter(Boolean) : null;
+    let src = spells ? 'rule' : '';
+    if (!spells && f.autoSpells) { spells = this._recommendedSpells(champ); src = 'rec'; }
+    if (spells) {
+      const res = await this._applySpells(spells);
+      if (log) log.spells = { src, ids: res.ids, ok: res.ok };
+      this._alert(res.ok ? 'autoSpells' : 'autoSpellsFailed', { ids: res.ids });
+    }
+    if (r.runes === 'rec') return this._autoRunes(champ, log);
+    if (Number(r.runes) > 0) {
+      const ok = (await this.selectRunePage(Number(r.runes))) || {};
+      if (log) log.runes = { page: Number(r.runes), ok: !!ok.ok };
+      this._alert(ok.ok ? 'autoRunes' : 'autoRunesFailed', { name: ((this.s.runes.pages || []).find((p) => p.id === Number(r.runes)) || {}).name || '' });
+      return;
+    }
+    if (f.autoRunes) return this._autoRunes(champ, log);
+  }
+
+  // Hechizos recomendados: los que más usaste vos con ese campeón en esa línea (tus partidas); si no hay datos, unos típicos de la línea.
+  _recommendedSpells(champ) {
+    const cs = this.s.champSelect || {};
+    const me = (cs.myTeam || []).find((p) => p.isMe) || {};
+    const pos = normPos(me.position);
+    const e = this._hist && this._hist.stats.get(Number(champ));
+    if (e && e.spells) {
+      const best = Object.entries(e.spells).filter(([k]) => k.startsWith((pos || 'any') + ':')).sort((a, b) => b[1] - a[1])[0]
+        || (!pos ? null : Object.entries(e.spells).sort((a, b) => b[1] - a[1])[0]);
+      if (best) return best[0].split(':')[1].split('-').map(Number);
+    }
+    const has = (a) => this._champHas(champ, a);
+    if (pos === 'jungle') return [4, 11];
+    if (pos === 'top') return [4, 12];
+    if (pos === 'middle') return [4, has('assassin') ? 14 : 12];
+    if (pos === 'bottom') return [4, has('marksman') ? 7 : 21];
+    if (pos === 'utility') return [4, has('tank') || has('fighter') ? 14 : 3];
+    return [4, 14];
+  }
+
+  // Aplica 2 hechizos respetando dónde tenés Destello (D o F) y que en la jungla Aplastar no se puede sacar.
+  async _applySpells(want) {
+    const cs = this.s.champSelect || {};
+    const me = (cs.myTeam || []).find((p) => p.isMe) || {};
+    let ids = [...new Set(want.map(Number).filter((x) => x > 0))].slice(0, 2);
+    if (normPos(me.position) === 'jungle') ids = [11].concat(ids.filter((x) => x !== 11)).slice(0, 2); // Aplastar es obligatorio en la jungla
+    if (ids.length < 2) { const keep = [me.spell1Id, me.spell2Id].map(Number).find((x) => x && !ids.includes(x)); if (keep) ids.push(keep); }
+    if (ids.length < 2) return { ok: false, ids };
+    let [a, b] = ids;
+    // Mantener cada hechizo en la tecla donde ya lo tenías (por ejemplo, Destello en la F).
+    if (Number(me.spell1Id) === b || Number(me.spell2Id) === a) [a, b] = [b, a];
+    const res = await this.setSpells(a, b);
+    return { ok: !!res.ok, ids: [a, b] };
+  }
+
   // Runas automáticas: después del pick automático se aplica la primera página recomendada por el propio cliente
   // para ese campeón y tu línea (las mismas que ves en "Runas recomendadas"). Va sobre la página temporal del cliente.
   async _autoRunes(championId, log) {
@@ -1319,7 +1386,7 @@ class Engine extends EventEmitter {
     log.status = r.status;
     if (r.status >= 200 && r.status < 300) {
       this._alert('autoPicked', { championId: pick });
-      if ((this.settings.favorites || {}).autoRunes) this._autoRunes(pick, log);
+      this._autoLoadout(pick, rp ? rp.rule : -1, log);
     } else this._alert('autoPickFailed');
   }
 

@@ -268,6 +268,39 @@ const game = (championId, lane, role, win) => ({ gameMode: 'CLASSIC', participan
   ok('reglas por orden de pick: "si pickeo último"');
   await ask('setFavorites', { rules: [], ids: [22, 266, 1] });
 
+  // 5h) Hechizos y runas por regla, Aplastar fijo en jungla y hechizos recomendados.
+  const loadPick = async (actionId, pos) => {
+    const n0 = mock.calls.length;
+    mock.startChampSelect();
+    mock.updateSession((s) => {
+      s.myTeam[0].assignedPosition = pos; s.myTeam[0].spell1Id = 4; s.myTeam[0].spell2Id = 14;
+      s.actions = [[{ id: actionId, actorCellId: 0, type: 'pick', championId: 0, completed: false, isInProgress: true }]];
+      s.timer = { phase: 'BAN_PICK', adjustedTimeLeftInPhase: 1200, totalTimeInPhase: 30000, isInfinite: false };
+    });
+    await waitFor(() => mock.calls.slice(n0).find((x) => x.method === 'PATCH' && x.url === '/lol-champ-select/v1/session/my-selection' && x.body.spell1Id), 'hechizos ' + actionId);
+    await sleep(400);
+    const calls = mock.calls.slice(n0);
+    mock.setPhase('None'); await sleep(300);
+    return { spells: calls.find((x) => x.method === 'PATCH' && x.url === '/lol-champ-select/v1/session/my-selection' && x.body.spell1Id).body, page: (calls.find((x) => x.method === 'PUT' && x.url === '/lol-perks/v1/currentpage') || {}).body };
+  };
+  mock.st.pages = [{ id: 10, name: 'Page A', isEditable: true, isValid: true }, { id: 11, name: 'Page B', isEditable: true, isValid: true }];
+  await ask('setFavorites', { ids: [], autoSpells: false, autoRunes: false, rules: [{ picks: [{ c: 266 }], spells: [12, 4], runes: 11 }, { lane: 'jungle', picks: [{ c: 2 }], spells: [11, 14, 4] }] });
+  await waitFor(() => (state.settings.favorites.rules || []).length === 2, 'reglas con hechizos');
+  assert.deepStrictEqual(state.settings.favorites.rules[1].spells, [14], 'en jungla se guarda solo el otro hechizo');
+  let lp = await loadPick(40, 'top');
+  assert.deepStrictEqual(lp.spells, { spell1Id: 4, spell2Id: 12 }, 'Destello queda en su tecla');
+  assert.strictEqual(lp.page, 11);
+  ok('reglas: hechizos y página de runas por regla (Destello queda en la tecla donde lo tenías)');
+  lp = await loadPick(41, 'jungle');
+  assert(lp.spells.spell1Id === 11 || lp.spells.spell2Id === 11, 'Aplastar siempre en jungla');
+  assert([lp.spells.spell1Id, lp.spells.spell2Id].includes(12), 'la regla 1 (cualquier línea) gana: Teleportar + Aplastar');
+  ok('reglas en jungla: Aplastar no se saca nunca, solo se elige el otro hechizo');
+  await ask('setFavorites', { rules: [], ids: [22], autoSpells: true });
+  lp = await loadPick(42, 'top');
+  assert.deepStrictEqual(lp.spells, { spell1Id: 4, spell2Id: 12 }, 'top sin datos: Destello + Teleportar');
+  ok('hechizos recomendados: sin regla, se ponen los típicos de la línea (o los que más usaste)');
+  await ask('setFavorites', { autoSpells: false, ids: [22, 266, 1] });
+
   // 6) Chat en ranked: apodo que da el cliente por celda (en tu idioma), nunca "Aliado N".
   mock.st.chat = [];
   mock.st.cellSummoners = { 1: { cellId: 1, nameVisibilityType: 'HIDDEN', playerAlias: 'Dagarraco Rocoso' } };
