@@ -27,6 +27,7 @@ async function startMock() {
   const lobbyObj = () => ({
     gameConfig: { queueId: st.queueId, gameMode: st.queueId === 480 ? 'SWIFTPLAY' : st.queueId === 450 ? 'ARAM' : st.queueId === 2400 ? 'KIWI' : 'CLASSIC', showQuickPlaySlotSelection: st.queueId === 480, showPositionSelector: [400, 420, 440].includes(st.queueId) },
     members: Array.from({ length: st.party || 1 }, (_, i) => ({ summonerId: i })),
+    multiUserChatId: 'muc-1', multiUserChatPassword: 'pw-secreta', mucJwtDto: { channelClaim: 'muc-1', domain: 'lol-pre-game', jwt: 'jwt-secreto' },
     localMember: { isLeader: st.leader !== false, playerSlots: st.queueId === 480 ? st.slots : [], firstPositionPreference: st.firstPos || '', secondPositionPreference: st.secondPos || '' },
   });
   const subs = new Set();
@@ -170,8 +171,9 @@ async function startMock() {
       if (key === 'GET /lol-chat/v1/me') return ok({ id: 'me1', pid: 'pme', gameName: 'Yo' });
       if (/^GET \/lol-chat\/v1\/conversations\/x(@|%40)champ-select\/participants$/.test(key) && st.csParticipants) return ok(st.csParticipants);
       if (/^GET \/lol-chat\/v1\/conversations\/.+\/participants$/.test(key)) return ok([{ pid: 'p5', name: 'Amigo Lobby' }, { pid: 'pme', name: 'Yo' }]);
-      if (key === 'GET /lol-chat/v1/conversations') return ok([{ id: 'x@champ-select', type: 'championSelect' }, { id: 'y', type: 'chat' }, { id: 'lob@party', type: 'groupchat' }].filter((c) => c.type !== 'groupchat' || st.lobbyChat !== false));
+      if (key === 'GET /lol-chat/v1/conversations') return ok([{ id: 'x@champ-select', type: 'championSelect' }, { id: 'y', type: 'chat' }, { id: 'amigo@la2.pvp.net', type: 'chat' }, { id: 'lob@party', type: 'groupchat' }].filter((c) => c.type !== 'groupchat' || st.lobbyChat !== false));
       if (/^GET \/lol-chat\/v1\/conversations\/.+\/messages$/.test(key)) return ok(st.chat);
+      if (key === 'GET /lol-chat/v1/conversations/muc-1%40lol-pre-game.la2.pvp.net' && st.lobbyChat === false) return ok({ id: 'muc-1@lol-pre-game.la2.pvp.net', type: '' });
       if (/^POST \/lol-chat\/v1\/conversations\/.+\/messages$/.test(key)) {
         st.chat.push({ id: 'm' + (st.chat.length + 1), type: 'chat', body: b.body, fromSummonerId: 777 });
         return ok(undefined, 200);

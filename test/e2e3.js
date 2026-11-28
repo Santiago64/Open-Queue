@@ -311,6 +311,19 @@ async function waitFor(fn, label, ms = 6000) {
   await ask('leaveLobby', {}); await waitFor(() => state.phase === 'None', 'fuera');
   ok('chat de la sala: se ve el nick de quien escribe (aunque el cliente no mande summonerId)');
 
+  // ---- Chat de la sala en clientes nuevos: no tiene tipo conocido, se encuentra por el id de la sala
+  mock.st.lobbyChat = false; mock.st.chat = [];
+  await ask('search', { queueId: 450 }); mock.setPhase('Lobby');
+  await waitFor(() => state.phase === 'Lobby' && state.chatReady, 'chat sala por muc', 12000);
+  mock.addRawChat({ body: 'hola desde la sala nueva', fromPid: 'p5', fromSummonerId: 0, fromId: 'x5' });
+  await waitFor(() => state.chat.some((c) => c.body === 'hola desde la sala nueva'), 'mensaje sala muc');
+  const nPost = mock.calls.length;
+  assert((await ask('sendChat', { body: 'vamos' })).ok);
+  assert(mock.calls.slice(nPost).find((c) => c.method === 'POST' && c.url.startsWith('/lol-chat/v1/conversations/muc-1%40lol-pre-game.la2.pvp.net/messages')), 'manda al chat de la sala');
+  await ask('leaveLobby', {}); await waitFor(() => state.phase === 'None', 'fuera muc');
+  mock.st.lobbyChat = true;
+  ok('chat de la sala (cliente nuevo): se encuentra por el id de la sala y se puede escribir');
+
   // ---- Invitaciones a sala
   mock.st.invites = [{ invitationId: 'inv1', fromSummonerId: 5, state: 'Pending' }];
   await waitFor(() => state.invites && state.invites.length === 1, 'invitación pendiente');

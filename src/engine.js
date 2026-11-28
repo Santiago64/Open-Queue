@@ -95,6 +95,15 @@ function cleanRules(list) {
   });
 }
 
+// El diagnóstico nunca lleva la clave ni el token del chat de la sala.
+function redactLobby(l) {
+  if (!l || typeof l !== 'object') return l;
+  const o = Object.assign({}, l);
+  if (o.multiUserChatPassword) o.multiUserChatPassword = '(oculto)';
+  if (o.mucJwtDto) o.mucJwtDto = Object.assign({}, o.mucJwtDto, { jwt: '(oculto)' });
+  return o;
+}
+
 function cleanRunePage(p) {
   if (!p) return null;
   const ids = Array.isArray(p.selectedPerkIds) ? p.selectedPerkIds.map(Number) : [];
@@ -1866,7 +1875,7 @@ class Engine extends EventEmitter {
       platform: process.platform,
       phase: this.s.phase,
       snapshots: {
-        lobby: lobby.status === 200 ? lobby.data : { status: lobby.status },
+        lobby: lobby.status === 200 ? redactLobby(lobby.data) : { status: lobby.status },
         gameflowSession: flow.status === 200 ? flow.data : { status: flow.status },
         champSelectSession: ready.status === 200 ? ready.data : d.lastSession,
         perks: {
@@ -1881,6 +1890,7 @@ class Engine extends EventEmitter {
       useRunesFail: d.useRunesFail || null,
       chatConvs: d.chatConvs || null,
       chatSample: d.chatSample || null,
+      lobbyChat: d.lobbyChat || null,
       chatCells: d.chatCells || null,
       friendsSample: d.friendsSample || null,
       inviteTry: d.inviteTry || null,
@@ -1929,9 +1939,37 @@ class Engine extends EventEmitter {
         for (const ty of ['lobby', 'party', 'groupchat', 'customGame']) { c = r.data.find((x) => x && x.type === ty); if (c) break; }
         if (!c) c = r.data.find((x) => x && !['chat', 'championSelect', 'postGame', 'system'].includes(x.type)) || r.data.find((x) => x && /lobby|party|custom/i.test(String(x.id)));
       }
+      if (!c && this.s.phase !== 'ChampSelect') c = await this._findLobbyMuc(r.data);
       if (c) this._chatId = c.id;
     }
     this._emitState();
+  }
+
+  // Chat de la sala en clientes nuevos: no aparece con un tipo conocido, así que se busca por el id de la sala
+  // (multiUserChatId) con el dominio que da el cliente (por ejemplo "...@lol-pre-game.la2.pvp.net").
+  async _findLobbyMuc(convs) {
+    if (Date.now() - (this._mucTryAt || 0) < 8000) return null; // no se pregunta en cada vuelta
+    this._mucTryAt = Date.now();
+    const lr = await this.lcu.request('GET', '/lol-lobby/v2/lobby');
+    const l = lr.status === 200 && lr.data ? lr.data : null;
+    const muc = l && (l.multiUserChatId || (l.mucJwtDto && l.mucJwtDto.channelClaim) || l.partyId);
+    const tries = [];
+    if (!muc) { if (this._diag) this._diag.lobbyChat = { noMuc: true }; return null; }
+    let c = convs.find((x) => x && String(x.id || '').startsWith(muc));
+    if (!c) {
+      const suffixes = new Set();
+      convs.forEach((x) => { const at = String((x && x.id) || '').split('@')[1]; if (at) suffixes.add(at.replace(/^(champ-select|sec|lol-pre-game|post-game|lol-post-game|lol-champ-select)\./, '')); });
+      const dom = (l.mucJwtDto && l.mucJwtDto.domain) || 'lol-pre-game';
+      const cands = [];
+      [...suffixes].forEach((sx) => { cands.push(`${muc}@${dom}.${sx}`, `${muc}@sec.${sx}`); });
+      for (const id of cands) {
+        const g = await this.lcu.request('GET', `/lol-chat/v1/conversations/${encodeURIComponent(id)}`);
+        tries.push([id.replace(muc, '<sala>'), g.status]);
+        if (g.status === 200) { c = Object.assign({ id }, g.data || {}); c.id = (g.data && g.data.id) || id; break; }
+      }
+    }
+    if (this._diag) this._diag.lobbyChat = { found: !!c, type: c && c.type, tries };
+    return c || null;
   }
 
   // Apodo anónimo de cada compañero en ranked (por ejemplo "Dagarraco Rocoso"), tal como lo muestra el cliente en tu idioma.

@@ -149,3 +149,7 @@
 - **Hechizos por campeón**: en cada campeón de una regla podés fijar sus 2 hechizos. Valen en todas las reglas y ganan sobre los de la regla.
 - Reglas y lista de odiados: un campeón que ya está en esa lista aparece en gris ("YA ESTÁ") y no se puede volver a elegir.
 - Runas del set: primero se intenta la página temporal del cliente (pidiéndole que la cree si no hay). Solo si el cliente no la da se usa tu página "Open Queue". En tu prueba se había usado directo esa página.
+
+##  v0.8.17
+- **Chat de la sala antes de buscar**: en clientes nuevos el chat de la sala no aparece con un tipo conocido, así que ahora se busca por el id de la sala. Así podés hablar con tus amigos desde el celular antes de buscar partida.
+- El diagnóstico ya no incluye la clave ni el token del chat de la sala.
