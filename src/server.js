@@ -138,7 +138,8 @@ async function startServer(opts = {}) {
   app.get('/api/status', desktopOnly, async (req, res) => {
     const st = engine.snapshot();
     res.json({
-      lol: { connected: st.connected, phase: st.phase, readyCheck: st.readyCheck },
+      lol: { connected: st.connected, phase: st.phase, readyCheck: st.readyCheck, chatReady: !!st.chatReady },
+      discordStatus: st.discordStatus || 'off',
       settings: st.settings,
       diag: st.diag,
       maxAutoDelay: st.maxAutoDelay,
@@ -153,6 +154,12 @@ async function startServer(opts = {}) {
   app.post('/api/diag', desktopOnly, async (req, res) => {
     res.json(req.body.on ? await engine.startDiag(store.dir) : await engine.stopDiag());
   });
+  // Discord desde la PC: link del voice, mensaje, Rich Presence y mandar el link al chat.
+  app.post('/api/discord', desktopOnly, (req, res) => {
+    const b = req.body || {};
+    res.json(engine.setDiscord({ voiceLink: b.voiceLink, voiceMsg: b.voiceMsg, rpc: b.rpc, clientId: b.clientId, lang: b.lang, showNick: b.showNick }));
+  });
+  app.post('/api/sendVoice', desktopOnly, async (req, res) => { res.json(await engine.sendVoice((req.body || {}).msg)); });
   app.post('/api/regen', desktopOnly, (req, res) => {
     store.regenerateCode();
     wss.clients.forEach((c) => { if (c.authed) { c.authed = false; try { c.send(JSON.stringify({ type: 'authRequired', reason: 'revoked' })); } catch (_) {} } });

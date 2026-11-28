@@ -157,3 +157,6 @@
 ##  v0.8.18
 - **Link del voice de Discord**: en Ajustes > Discord pegás la invitación a tu canal de voz y elegís el mensaje (3 bases o el tuyo, con {link} donde va el link). En el chat de la sala y del champ select aparece el botón 🎧 para mandarlo, así van comunicados aunque en tu región no haya chat de voz.
 - **Discord Rich Presence** (opcional): en tu perfil de Discord se ve "Open Queue", si estás en sala, buscando o eligiendo, el ícono de tu campeón, tu nick (se puede ocultar) y un botón "Unirse al voice" con tu link. Habla con Discord abierto en la PC, sin bots. Necesita el Application ID de una aplicación de Discord.
+
+##  v0.8.19
+- **Discord desde la PC**: la ventana de escritorio ahora tiene la tarjeta de Discord. Ahí pegás el link del voice, elegís el mensaje (bases o propio) y activás el Rich Presence con su Application ID. El botón "Mandar link del voice" lo manda al chat de la sala o del champ select sin necesitar el celular. En modo streamer el link se oculta.

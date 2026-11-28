@@ -45,6 +45,30 @@
         </div>
         <p class="note" data-i18n="autoNote"></p>
       </div>
+      <div class="card" id="dcCard">
+        <h2>Discord</h2>
+        <div class="dim" style="font-size:12px;margin:8px 0 6px" data-i18n="voiceLink"></div>
+        <input id="dcLink" class="secret" type="url" placeholder="https://discord.gg/..." autocomplete="off">
+        <p class="note" data-i18n="voiceLinkHelpPc"></p>
+        <div class="dim" style="font-size:12px;margin:10px 0 6px" data-i18n="voiceMsg"></div>
+        <div class="chips" style="margin-bottom:6px" id="dcPresets"></div>
+        <textarea id="dcMsg" rows="2" maxlength="200" style="width:100%;font-family:inherit;font-size:14px"></textarea>
+        <p class="note" data-i18n="voiceMsgHelp"></p>
+        <div class="row" style="gap:8px;margin-top:8px">
+          <button class="btn small" id="dcSave" data-i18n="save"></button>
+          <button class="btn small primary" id="dcSend"></button>
+          <span class="dim" id="dcMsgOut" style="font-size:12px"></span>
+        </div>
+        <div class="row" style="margin-top:16px"><span style="flex:1" data-i18n="rpc"></span><div class="toggle" id="rpcToggle"></div></div>
+        <p class="note" data-i18n="rpcHelp"></p>
+        <div id="rpcMore">
+          <p class="note"><b id="rpcStatus"></b></p>
+          <div class="row" style="margin-top:8px"><span style="flex:1" data-i18n="rpcNick"></span><div class="toggle" id="rpcNick"></div></div>
+          <div class="dim" style="font-size:12px;margin:10px 0 6px" data-i18n="rpcId"></div>
+          <div class="row" style="gap:6px"><input id="dcId" type="text" inputmode="numeric" placeholder="123456789012345678" autocomplete="off" style="flex:1"><button class="btn small" id="dcIdSave" data-i18n="save"></button></div>
+          <p class="note" data-i18n="rpcIdHelp"></p>
+        </div>
+      </div>
       <div class="card">
         <div class="row"><h2 data-i18n="diag"></h2><span class="spacer"></span><button class="btn small" id="diagBtn"></button></div>
         <p class="note" data-i18n="diagHelp"></p>

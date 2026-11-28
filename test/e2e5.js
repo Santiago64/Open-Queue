@@ -107,6 +107,21 @@ function fakeDiscord(dir) {
   await waitFor(() => state.discordStatus === 'off' && dc.frames[dc.frames.length - 1] === null, 'presencia borrada');
   ok('Rich Presence: podés ocultar tu nick, y al apagarlo se borra de tu perfil');
 
+  // 6) Lo mismo desde la ventana de la PC (sin celular).
+  const pc = async (url, body) => (await fetch(`http://127.0.0.1:${srv.port}${url}`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) })).json();
+  assert.strictEqual((await pc('/api/discord', { voiceLink: 'https://nope.com/a' })).error, 'badLink');
+  assert((await pc('/api/discord', { voiceLink: 'https://discord.com/invite/PcLink99', voiceMsg: 'Desde la PC: {link}' })).ok);
+  const stPc = await (await fetch(`http://127.0.0.1:${srv.port}/api/status`)).json();
+  assert.strictEqual(stPc.settings.discord.voiceLink, 'https://discord.com/invite/PcLink99');
+  assert.strictEqual(stPc.discordStatus, 'off');
+  mock.setPhase('None'); await sleep(300);
+  await ask('search', { queueId: 400 }); mock.setPhase('Lobby');
+  await waitFor(async () => (await (await fetch(`http://127.0.0.1:${srv.port}/api/status`)).json()).lol.chatReady, 'chat listo (PC)');
+  const n1 = mock.calls.length;
+  assert((await pc('/api/sendVoice', { msg: 'Desde la PC: {link}' })).ok);
+  assert.strictEqual(mock.calls.slice(n1).find((c) => c.method === 'POST' && /\/messages$/.test(c.url)).body.body, 'Desde la PC: https://discord.com/invite/PcLink99');
+  ok('desde la ventana de la PC: se guarda el link y el mensaje, y se manda al chat de la sala sin usar el celular');
+
   mock.setPhase('None'); await sleep(200);
   ws.close(); await srv.close(); mock.close(); dc.server.close();
   console.log(`\nTODO OK (${n} comprobaciones)`);

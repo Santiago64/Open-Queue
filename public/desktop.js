@@ -24,8 +24,46 @@
   }
 
   async function post(path, body) {
-    try { await fetch(path, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body || {}) }); } catch (_) {}
+    try { const r = await fetch(path, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body || {}) }); return await r.json(); } catch (_) { return { ok: false }; }
   }
+
+  // ---- Discord ----
+  let dcFilled = false;
+  function dcInfo(txt, bad) { const o = $('dcMsgOut'); o.textContent = txt; o.style.color = bad ? '#e0485a' : ''; clearTimeout(dcInfo._t); dcInfo._t = setTimeout(() => { o.textContent = ''; }, 4000); }
+  function dcErr(r) { return r && r.error === 'badLink' ? t('voiceBadLink') : r && r.error === 'badId' ? t('rpcBadId') : r && r.error === 'noLink' ? t('voiceNoLink') : t('voiceNoChat'); }
+  function paintDiscord() {
+    const d = st.settings.discord || {};
+    if (!dcFilled) { $('dcLink').value = d.voiceLink || ''; $('dcMsg').value = d.voiceMsg || ''; $('dcId').value = d.clientId || ''; dcFilled = true; }
+    $('dcMsg').placeholder = t('voicePreset1');
+    const ph = [1, 2, 3].map((n) => `<button class="chip" data-preset="${n}">${t('voicePresetN')} ${n}</button>`).join('');
+    if ($('dcPresets')._h !== ph) { $('dcPresets').innerHTML = ph; $('dcPresets')._h = ph; }
+    const canSend = !!d.voiceLink && st.lol.connected && !!st.lol.chatReady;
+    $('dcSend').textContent = '🎧 ' + t('voiceSend');
+    $('dcSend').disabled = !canSend;
+    $('dcSend').title = canSend ? '' : t(d.voiceLink ? 'voiceNoChat' : 'voiceNoLink');
+    $('rpcToggle').classList.toggle('on', !!d.rpc);
+    $('rpcMore').style.display = d.rpc ? '' : 'none';
+    $('rpcStatus').textContent = t('rpcStatus_' + (st.discordStatus || 'off'));
+    $('rpcNick').classList.toggle('on', d.showNick !== false);
+  }
+  $('dcPresets').addEventListener('click', (e) => { const b = e.target.closest('[data-preset]'); if (b) $('dcMsg').value = t('voicePreset' + b.getAttribute('data-preset')); });
+  $('dcSave').addEventListener('click', async () => {
+    const r = await post('/api/discord', { voiceLink: $('dcLink').value, voiceMsg: $('dcMsg').value, lang: OQ.lang });
+    if (r && r.ok) { dcFilled = false; dcInfo(t('saved')); } else dcInfo(dcErr(r), true);
+    poll();
+  });
+  $('dcSend').addEventListener('click', async () => {
+    const d = (st && st.settings.discord) || {};
+    const r = await post('/api/sendVoice', { msg: d.voiceMsg || t('voicePreset1') });
+    dcInfo(r && r.ok ? t('voiceSent') : dcErr(r), !(r && r.ok));
+  });
+  $('rpcToggle').addEventListener('click', async () => { await post('/api/discord', { rpc: !(st.settings.discord || {}).rpc, lang: OQ.lang }); poll(); });
+  $('rpcNick').addEventListener('click', async () => { await post('/api/discord', { showNick: (st.settings.discord || {}).showNick === false, lang: OQ.lang }); poll(); });
+  $('dcIdSave').addEventListener('click', async () => {
+    const r = await post('/api/discord', { clientId: $('dcId').value, lang: OQ.lang });
+    if (r && r.ok) { dcFilled = false; dcInfo(t('saved')); } else dcInfo(dcErr(r), true);
+    poll();
+  });
 
   function paint() {
     if (!st) return;
@@ -44,6 +82,7 @@
     $('diagBtn').classList.toggle('primary', !!dg.on);
     $('diagInfo').textContent = dg.file ? `${t('diagFile')}: ${dg.file}${dg.on ? ` · ${dg.count} ${t('diagEvents')}` : ''}` : '';
     $('delayLbl').textContent = Number(a.delay) === 0 ? t('autoNow') : `${a.delay}${t('seconds')}`;
+    paintDiscord();
   }
 
   async function poll() {
