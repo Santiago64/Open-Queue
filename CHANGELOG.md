@@ -153,3 +153,7 @@
 ##  v0.8.17
 - **Chat de la sala antes de buscar**: en clientes nuevos el chat de la sala no aparece con un tipo conocido, así que ahora se busca por el id de la sala. Así podés hablar con tus amigos desde el celular antes de buscar partida.
 - El diagnóstico ya no incluye la clave ni el token del chat de la sala.
+
+##  v0.8.18
+- **Link del voice de Discord**: en Ajustes > Discord pegás la invitación a tu canal de voz y elegís el mensaje (3 bases o el tuyo, con {link} donde va el link). En el chat de la sala y del champ select aparece el botón 🎧 para mandarlo, así van comunicados aunque en tu región no haya chat de voz.
+- **Discord Rich Presence** (opcional): en tu perfil de Discord se ve "Open Queue", si estás en sala, buscando o eligiendo, el ícono de tu campeón, tu nick (se puede ocultar) y un botón "Unirse al voice" con tu link. Habla con Discord abierto en la PC, sin bots. Necesita el Application ID de una aplicación de Discord.

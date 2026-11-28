@@ -649,6 +649,9 @@
       return `<div class="m ${m.mine ? 'mine' : ''}">${name ? `<b>${esc(name)}</b>` : ''}${who}${esc(m.body)}</div>`;
     }).join('');
     if (box._h !== chatHtml) { box.innerHTML = chatHtml; box._h = chatHtml; if (atBottom) box.scrollTop = box.scrollHeight; }
+    const dv = $('chatVoice');
+    const vh = (state.settings.discord || {}).voiceLink ? `<button class="btn small" data-act="sendVoice">🎧 ${t('voiceSend')}</button>` : '';
+    if (dv && dv._h !== vh) { dv.innerHTML = vh; dv._h = vh; }
   }
 
   // ---------- temporizadores ----------
@@ -845,11 +848,40 @@
           <button class="btn small" style="margin-top:10px" data-act="testSound">${t('testSound')}</button></div>
         <div class="card"><h2>${t('fullscreen')}</h2><p class="note">${t('fullscreenHelp')}</p>
           <button class="btn small" style="margin-top:10px" data-act="fullscreen">${t('fullscreenBtn')}</button></div>
+        ${discordHtml()}
         ${window.OQTheme ? window.OQTheme.html() : ''}
         <button class="btn block" data-act="unlink">${t('unlink')}</button>
         <p class="note" style="text-align:center;margin-top:12px">Open Queue v${esc(state.version || '?')}</p>`;
     }
     $('sheetList').classList.remove('hidden');
+  }
+
+  // ===== Discord: link del voice y Rich Presence =====
+  function discordHtml() {
+    const d = state.settings.discord || {};
+    const st = state.discordStatus || 'off';
+    const presets = [1, 2, 3].map((n) => `<button class="chip" data-act="voicePreset" data-v="${n}">${t('voicePresetN')} ${n}</button>`).join('');
+    return `<div class="card"><h2>Discord</h2>
+      <div class="dim" style="font-size:12px;margin:4px 0 6px">${t('voiceLink')}</div>
+      <input id="dcLink" type="url" placeholder="https://discord.gg/..." value="${esc(d.voiceLink || '')}" autocomplete="off">
+      <p class="note" style="margin-top:4px">${t('voiceLinkHelp')}</p>
+      <div class="dim" style="font-size:12px;margin:10px 0 6px">${t('voiceMsg')}</div>
+      <div class="chips" style="margin-bottom:6px">${presets}</div>
+      <textarea id="dcMsg" rows="2" maxlength="200" style="width:100%;font-family:inherit;font-size:14px" placeholder="${esc(t('voicePreset1'))}">${esc(d.voiceMsg || '')}</textarea>
+      <p class="note" style="margin-top:4px">${t('voiceMsgHelp')}</p>
+      <button class="btn small primary" style="margin-top:8px" data-act="discordSave">${t('save')}</button>
+      <div class="row" style="margin-top:14px"><span style="flex:1">${t('rpc')}</span><div class="toggle ${d.rpc ? 'on' : ''}" data-act="toggleRpc"></div></div>
+      <p class="note" style="margin-top:4px">${t('rpcHelp')}</p>
+      ${d.rpc ? `<p class="note" style="margin-top:4px"><b>${t('rpcStatus_' + st) || st}</b></p>
+      <div class="row" style="margin-top:8px"><span style="flex:1">${t('rpcNick')}</span><div class="toggle ${d.showNick !== false ? 'on' : ''}" data-act="toggleRpcNick"></div></div>
+      <div class="dim" style="font-size:12px;margin:10px 0 6px">${t('rpcId')}</div>
+      <div class="row" style="gap:6px"><input id="dcId" inputmode="numeric" placeholder="123456789012345678" value="${esc(d.clientId || '')}" autocomplete="off" style="flex:1"><button class="btn small" data-act="discordSaveId">${t('save')}</button></div>
+      <p class="note" style="margin-top:4px">${t('rpcIdHelp')}</p>` : ''}</div>`;
+  }
+  async function discordSet(patch, reopen) {
+    const r = await request('setDiscord', Object.assign({ lang: OQ.lang }, patch));
+    if (r && r.ok) { toast(t('saved'), 1500); if (reopen) setTimeout(() => openList('settings'), 300); }
+    else toast(r && r.error === 'badLink' ? t('voiceBadLink') : r && r.error === 'badId' ? t('rpcBadId') : t('errGeneric'), 4000);
   }
 
   // ===== Reglas del pick automático =====
@@ -1498,6 +1530,12 @@
         break;
       }
       case 'lang': OQ.setLang(v); applyStatic(); loadStatic(); openList('settings'); break;
+      case 'voicePreset': { const ta = $('dcMsg'); if (ta) ta.value = t('voicePreset' + el.getAttribute('data-v')); break; }
+      case 'discordSave': discordSet({ voiceLink: ($('dcLink') || {}).value || '', voiceMsg: ($('dcMsg') || {}).value || '' }); break;
+      case 'discordSaveId': discordSet({ clientId: ($('dcId') || {}).value || '' }, true); break;
+      case 'toggleRpc': discordSet({ rpc: !(state.settings.discord || {}).rpc }, true); break;
+      case 'toggleRpcNick': discordSet({ showNick: (state.settings.discord || {}).showNick === false }, true); break;
+      case 'sendVoice': request('sendVoice', { msg: (state.settings.discord || {}).voiceMsg || t('voicePreset1') }).then((r) => toast(r && r.ok ? t('voiceSent') : t('errGeneric'), 2500)); break;
       case 'toggleKeep': {
         let on = false; try { on = localStorage.getItem('oq_keep') === '1'; } catch (_) {}
         setKeepAwake(!on); setTimeout(() => openList('settings'), 50);

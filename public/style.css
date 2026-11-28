@@ -59,7 +59,7 @@ button, select, input { font-family: inherit; font-size: 15px; }
 .chip { border: 1px solid var(--line2); padding: 8px 12px; font-size: 13px; cursor: pointer; background: transparent; color: var(--text); border-radius: 2px; }
 .chip.on { background: var(--accent); color: var(--accent-ink); border-color: var(--accent); font-weight: 700; }
 
-select, input[type=text], input[type=number], input[type=search] { width: 100%; background: var(--bg); color: var(--text); border: 1px solid var(--line2); padding: 12px; border-radius: 2px; }
+select, input[type=text], input[type=number], input[type=search], input[type=url], input:not([type]), textarea { width: 100%; background: var(--bg); color: var(--text); border: 1px solid var(--line2); padding: 12px; border-radius: 2px; }
 input:focus, select:focus { outline: 1px solid var(--accent); }
 .codeinput { font-family: var(--display); font-size: 30px; letter-spacing: .5em; text-align: center; }
 

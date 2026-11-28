@@ -7,6 +7,7 @@ const express = require('express');
 const QRCode = require('qrcode');
 const { WebSocketServer } = require('ws');
 const { Store } = require('./store');
+const { Presence } = require('./discord');
 const { Engine } = require('./engine');
 
 const DEFAULT_PORT = 4747;
@@ -58,6 +59,8 @@ async function loadStatic(lang) {
 async function startServer(opts = {}) {
   const store = new Store(opts.dataDir || process.env.OQ_DATA);
   const engine = opts.engine || new Engine(store);
+  const presence = new Presence(engine, store);
+  engine.on('discord', () => presence.apply());
   const app = express();
   app.disable('x-powered-by');
 
@@ -177,6 +180,8 @@ async function startServer(opts = {}) {
     setAutoInvite: (m) => { engine.setAutoInvite(m.enabled); return { ok: true }; },
     answerInvite: (m) => engine.answerInvite(m.inviteId, !!m.accept),
     setPreBan: (m) => { engine.setPreBan(m.championId); return { ok: true }; },
+    setDiscord: (m) => engine.setDiscord({ voiceLink: m.voiceLink, voiceMsg: m.voiceMsg, rpc: m.rpc, clientId: m.clientId, lang: m.lang, showNick: m.showNick }),
+    sendVoice: (m) => engine.sendVoice(m.msg),
     setHates: (m) => { engine.setHates({ ids: m.ids, autoBan: m.autoBan }); return { ok: true }; },
     setPrePick: (m) => { engine.setPrePick(m.championId); return { ok: true }; },
     setFavorites: (m) => { engine.setFavorites({ ids: m.ids, autoPick: m.autoPick, useHistory: m.useHistory, when: m.when, autoRunes: m.autoRunes, runePageId: m.runePageId, rules: m.rules, autoSpells: m.autoSpells, runeSet: m.runeSet, spellSet: m.spellSet }); return { ok: true }; },
@@ -244,7 +249,7 @@ async function startServer(opts = {}) {
     port,
     engine,
     store,
-    close: () => new Promise((resolve) => { engine.stop(); wss.clients.forEach((c) => c.terminate()); server.close(() => resolve()); }),
+    close: () => new Promise((resolve) => { presence.stop(); engine.stop(); wss.clients.forEach((c) => c.terminate()); server.close(() => resolve()); }),
   };
 }
 

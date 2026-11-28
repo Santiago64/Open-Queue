@@ -15,6 +15,8 @@ const DEFAULTS = {
     // Hasta 3 favoritos. autoPick: si llega el final de tu turno sin pick, se elige uno solo.
     // useHistory: ordena y recomienda según tus partidas (y la línea que te tocó).
     favorites: { ids: [], autoPick: false, useHistory: false, when: 'end', autoRunes: false, runePageId: 0, rules: [], autoSpells: false, runeSets: {}, spellSets: {} }, // spellSets: { championId: [hechizo, hechizo] } // runeSets: { championId: página de runas armada en las reglas } // when: 'end' (segundo 0) | 'start' (apenas te toca)
+    // Discord: link de invitación a tu voice, mensaje para mandarlo y Rich Presence (rpc, con el Application ID de Discord).
+    discord: { rpc: false, clientId: '', voiceLink: '', voiceMsg: '', lang: 'es', showNick: true },
   },
   pairing: { code: null, tokens: [] },
 };
@@ -37,6 +39,7 @@ class Store {
       this.data.settings.autoInvite = Object.assign({}, DEFAULTS.settings.autoInvite, (raw.settings || {}).autoInvite || {});
       this.data.settings.preBan = Object.assign({}, DEFAULTS.settings.preBan, (raw.settings || {}).preBan || {});
       this.data.settings.favorites = Object.assign({}, DEFAULTS.settings.favorites, (raw.settings || {}).favorites || {});
+      this.data.settings.discord = Object.assign({}, DEFAULTS.settings.discord, (raw.settings || {}).discord || {});
       if (!Array.isArray(this.data.settings.favorites.ids)) this.data.settings.favorites.ids = [];
       this.data.settings.roles = Object.assign({}, DEFAULTS.settings.roles, (raw.settings || {}).roles || {});
       this.data.pairing = Object.assign({}, DEFAULTS.pairing, raw.pairing || {});

@@ -25,6 +25,7 @@ Free, open-source companion for the League of Legends client. Control your own c
 - Swap requests with teammates (pick order, role, champion) and ARAM bench/rerolls. ARAM Mayhem: choose between your 2 starting options.
 - Runes: your pages, the game's recommended pages, and an editor (create new pages or edit existing ones).
 - "Dodge" button (closes the client, asks for confirmation).
+- Discord: send your voice channel invite to the lobby or champ select chat with one tap (with your own message), and optional Rich Presence showing your lobby, champion and a "Join the voice" button on your profile.
 - Customization: color wheel, fonts (including your own), custom background and sound, panel order. Stored only on your phone.
 - English and Spanish.
 
@@ -70,6 +71,7 @@ Companion gratuito y de código abierto para el cliente de League of Legends. Co
 - Pedidos de cambio con compañeros (orden de pick, rol, campeón) y banco/rerolls de ARAM. ARAM Mayhem: elegís entre tus 2 opciones iniciales.
 - Runas: tus páginas, las recomendadas por el juego y un editor (crear páginas nuevas o editar las existentes).
 - Botón **Dodgear** (cierra el cliente, pide confirmación).
+- Discord: mandás el link de tu canal de voz al chat de la sala o del champ select con un toque (con tu mensaje), y opcionalmente Rich Presence: en tu perfil se ve tu sala, tu campeón y un botón "Unirse al voice".
 - Personalización: rueda de color, tipografías (también la tuya), fondo y sonido propios, orden de paneles. Se guarda solo en tu celu.
 - Español e inglés.
 

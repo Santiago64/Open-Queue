@@ -34,6 +34,7 @@ const NOISY_URIS = ['/lol-chat', '/riotclient', '/lol-patch', '/data-store', '/l
   '/lol-collections', '/lol-catalog', '/lol-premade-voice', '/lol-npe', '/lol-esport', '/lol-leaver', '/lol-statstones',
   '/lol-career', '/lol-account', '/lol-lcds', '/lol-player', '/lol-event', '/lol-pft', '/lol-yourshop', '/lol-vanguard'];
 
+const { VOICE_RE } = require('./discord');
 const AUTO_PICK_MARGIN_MS = 700; // pick automático: cuánto antes del 0 se manda
 const AUTO_BAN_MARGIN_MS = 700; // ban automático: igual, cuánto antes del 0
 const AUTO_PICK_START_DELAY_MS = 1500; // modo "apenas te toca": espera para que se marque tu pick preparado
@@ -201,14 +202,14 @@ class Engine extends EventEmitter {
 
   // ---------- conexión inicial ----------
   async _onConnected() {
-    this.s.connected = true;
     const [phase, queues, me] = await Promise.all([
       this.lcu.request('GET', '/lol-gameflow/v1/gameflow-phase'),
       this.lcu.request('GET', '/lol-game-queues/v1/queues'),
       this.lcu.request('GET', '/lol-summoner/v1/current-summoner'),
     ]);
-    if (me.status === 200 && me.data) { this._mySummonerId = me.data.summonerId; this._myPuuid = me.data.puuid || null; }
+    if (me.status === 200 && me.data) { this._mySummonerId = me.data.summonerId; this._myPuuid = me.data.puuid || null; this._myName = me.data.gameName || me.data.displayName || ''; }
     this.s.queues = this._pickQueues(queues.data);
+    this.s.connected = true; // recién con las colas cargadas (si no, el celular puede ver la lista vacía)
     await this._refreshRunes();
     this._loadChampInfo();
     this._loadSpellModes();
@@ -217,6 +218,38 @@ class Engine extends EventEmitter {
     this._checkInvites();
     this._setPhase(typeof phase.data === 'string' ? phase.data : 'None', true);
     this._emitState();
+  }
+
+  queueName(id) { return QUEUE_NAMES[Number(id)] || ''; }
+  champName(id) { const c = this._cinfo && this._cinfo.get(Number(id)); return (c && c.name) || ''; }
+
+  // Discord: link de invitación a tu canal de voz, mensaje para mandarlo y la presencia (Rich Presence).
+  setDiscord(patch) {
+    const d = this.settings.discord = Object.assign({ rpc: false, clientId: '', voiceLink: '', voiceMsg: '', lang: 'es', showNick: true }, this.settings.discord || {});
+    patch = patch || {};
+    if (patch.voiceLink !== undefined) {
+      const v = String(patch.voiceLink || '').trim().replace(/^http:\/\//, 'https://').replace(/^(discord\.gg|discord\.com)/, 'https://$1');
+      if (v && !VOICE_RE.test(v)) return { ok: false, error: 'badLink' };
+      d.voiceLink = v;
+    }
+    if (patch.voiceMsg !== undefined) d.voiceMsg = String(patch.voiceMsg || '').slice(0, 200);
+    if (patch.rpc !== undefined) d.rpc = !!patch.rpc;
+    if (patch.showNick !== undefined) d.showNick = !!patch.showNick;
+    if (patch.lang === 'es' || patch.lang === 'en') d.lang = patch.lang;
+    if (patch.clientId !== undefined) { const c = String(patch.clientId || '').trim(); if (c && !/^\d{15,22}$/.test(c)) return { ok: false, error: 'badId' }; d.clientId = c; }
+    this.store.save();
+    this.emit('discord');
+    this._emitState();
+    return { ok: true };
+  }
+
+  // Manda tu link del voice al chat (de la sala o del champ select) con tu mensaje.
+  async sendVoice(msg) {
+    const d = this.settings.discord || {};
+    if (!d.voiceLink) return { ok: false, error: 'noLink' };
+    let body = String(msg || d.voiceMsg || '').trim() || '🎧 {link}';
+    body = body.includes('{link}') ? body.split('{link}').join(d.voiceLink) : `${body} ${d.voiceLink}`;
+    return this.sendChat(body);
   }
 
   _pickQueues(list) {
@@ -298,6 +331,7 @@ class Engine extends EventEmitter {
       if (!this._lobbyNames) this._lobbyNames = new Map();
       d.members.forEach((m) => { const nm = m.gameName || m.summonerName || m.summonerInternalName; if (m && m.summonerId && nm) this._lobbyNames.set(m.summonerId, nm); });
     }
+    this._partyId = d.partyId || d.multiUserChatId || null;
     this._rawSlots = Array.isArray(lm.playerSlots) ? lm.playerSlots : [];
     const quick = !!gc.showQuickPlaySlotSelection || gc.queueId === 480;
     this.s.lobby = {
@@ -395,6 +429,10 @@ class Engine extends EventEmitter {
     const prev = this.s.phase;
     if (p === prev && !force) return;
     this.s.phase = p;
+    if (p !== prev) this._phaseSince = Date.now();
+    // Campeón con el que entrás a la partida (para mostrarlo en Discord durante el juego).
+    if (prev === 'ChampSelect') { const me = this.s.champSelect && (this.s.champSelect.myTeam || []).find((x) => x.isMe); this._gameChamp = (me && me.championId) || 0; }
+    if (['None', 'Lobby'].includes(p)) this._gameChamp = 0;
 
     if (p === 'ReadyCheck' && prev !== 'ReadyCheck') this._startReadyCheck();
     if (prev === 'ReadyCheck' && p !== 'ReadyCheck') this._stopReadyCheck();
@@ -1289,7 +1327,7 @@ class Engine extends EventEmitter {
     const map = new Map();
     try {
       const r = await this.lcu.request('GET', '/lol-game-data/assets/v1/champion-summary.json');
-      if (r.status === 200 && Array.isArray(r.data)) r.data.forEach((c) => { if (c && c.id > 0) map.set(Number(c.id), { tags: (c.roles || []).map((x) => String(x).toLowerCase()), melee: null, dmg: null }); });
+      if (r.status === 200 && Array.isArray(r.data)) r.data.forEach((c) => { if (c && c.id > 0) map.set(Number(c.id), { name: c.name || '', tags: (c.roles || []).map((x) => String(x).toLowerCase()), melee: null, dmg: null }); });
     } catch (_) {}
     try {
       if (typeof fetch === 'function' && !process.env.OQ_NO_DDRAGON) {
