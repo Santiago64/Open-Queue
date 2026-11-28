@@ -442,9 +442,9 @@ const game = (championId, lane, role, win) => ({ gameMode: 'CLASSIC', participan
   mock.addRawChat({ body: 'mid', type: 'chat', fromObfuscatedSummonerId: 556, fromSummonerId: 0, fromPuuid: '', fromId: 'o2', fromPid: 'o2' });
   await waitFor(() => state.chat.some((c) => c.body === 'mid'), 'mensajes ranked');
   const c1 = state.chat.find((c) => c.body === 'voy top'); const c2 = state.chat.find((c) => c.body === 'mid');
-  assert.strictEqual(c1.name, 'Dagarraco Rocoso'); assert.strictEqual(c1.allyN, 0); assert.strictEqual(c1.pos, 'jungle');
-  assert.strictEqual(c2.name, 'Poro Veloz'); assert.strictEqual(c2.champId, 22);
-  ok('chat en ranked: se ve el apodo del cliente (de la celda o del chat), con ícono y línea, sin "Aliado N"');
+  assert.strictEqual(c1.name, ''); assert.strictEqual(c1.allyN, 0); assert.strictEqual(c1.pos, 'jungle');
+  assert.strictEqual(c2.name, ''); assert.strictEqual(c2.champId, 22);
+  ok('chat en soloq/flex: sin nombres ni apodos, solo la línea y el ícono del campeón');
   mock.setPhase('None'); await sleep(200);
 
   ws.close(); await srv.close(); mock.close();

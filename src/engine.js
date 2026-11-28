@@ -2113,7 +2113,6 @@ class Engine extends EventEmitter {
         });
       }
     }
-    if (rankedCs) await this._loadCellAliases();
     if (this.s.phase !== 'ChampSelect') {
       if (!this._chatMe) {
         const mr = await this.lcu.request('GET', '/lol-chat/v1/me');
@@ -2131,7 +2130,9 @@ class Engine extends EventEmitter {
       const who = m.fromPuuid || m.fromObfuscatedPuuid || m.fromSummonerId || m.fromObfuscatedSummonerId || m.fromId || m.fromPid;
       if (!this._allyNums) this._allyNums = new Map();
       const partName = [m.fromPid, m.fromId, m.fromPuuid, m.fromObfuscatedPuuid, m.fromSummonerId, m.fromObfuscatedSummonerId].map((k) => k && pn.get(String(k))).find(Boolean) || '';
-      const alias = !mine && hide ? ((cell && (cell.playerAlias || (this._cellAlias && this._cellAlias.get(cell.cellId)))) || partName || '') : '';
+      // En soloq/flex no se muestra ningún nombre ni apodo de quien no es de tu grupo: solo su línea y su campeón (más limpio).
+      const alias = '';
+      void partName;
       if (!mine && !inParty && !alias && !this._allyNums.has(who)) this._allyNums.set(who, this._allyNums.size + 1);
       let name = '';
       // En ranked el cliente muestra un apodo anónimo (playerAlias): se usa ese mismo en vez de "Aliado N".

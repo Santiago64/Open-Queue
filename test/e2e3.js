@@ -242,9 +242,9 @@ async function waitFor(fn, label, ms = 6000) {
   mock.addRawChat({ body: 'gank mid', type: 'chat', fromObfuscatedSummonerId: 99123, fromSummonerId: 0, fromPuuid: '', fromId: 'o1', fromPid: 'o1' });
   await waitFor(() => state.chat.some((c) => c.body === 'gank mid'), 'mensaje ranked');
   const rk = state.chat.find((c) => c.body === 'gank mid');
-  assert.strictEqual(rk.name, 'Escarabajo Rocoso'); assert.strictEqual(rk.champId, 103); assert.strictEqual(rk.pos, 'jungle');
+  assert.strictEqual(rk.name, ''); assert.strictEqual(rk.champId, 103); assert.strictEqual(rk.pos, 'jungle');
   mock.setPhase('None'); await sleep(300);
-  ok('chat en ranked: apodo del cliente (no "Aliado N") y campeón/línea de quien habla');
+  ok('chat en ranked: sin nombre ni apodo, solo campeón y línea de quien habla');
 
   // ---- Crear sala sin buscar
   assert.strictEqual(state.phase, 'None');

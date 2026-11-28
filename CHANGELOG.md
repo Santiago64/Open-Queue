@@ -170,3 +170,6 @@
 - Arreglo del ban automático en Flex: el cliente mandaba una lista de baneables con un solo campeón y la app descartaba todos tus odiados y tu ban preparado. Ahora una lista tan corta no se toma en cuenta y el ban se hace igual (si no se puede, el cliente lo rechaza).
 - Orden de pick: si ya pickeaste, o el compañero ya pickeó, no se ofrece pedir el cambio (el cliente lo seguía mostrando).
 - Invitar amigos: los que están en partida, en cola o eligiendo campeón aparecen como "Ocupado" y no se pueden invitar.
+
+##  v0.8.22
+- Chat en soloq/flex: de los jugadores que no son de tu grupo no se muestra ningún nombre ni apodo, solo su línea y el ícono de su campeón (se lee más limpio).
